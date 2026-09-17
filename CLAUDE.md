@@ -74,7 +74,17 @@ Four-layer structure under `wispr/`:
 
 ## CLI Tool (`WisprCLI`)
 
-Embedded in `Wispr.app/Contents/Resources/bin/WisprCLI`. Transcribes audio/video files offline. Shares model storage with GUI app at `~/Library/Application Support/wispr/models/`.
+Embedded in `Wispr.app/Contents/Resources/bin/WisprCLI`. Transcribes audio/video files offline.
+
+Reads models from the GUI app's sandbox container, so both share one set of downloads:
+
+```
+~/Library/Containers/com.stormacq.mac.wispr/Data/Library/Application Support/wispr/models/
+```
+
+`ModelPaths.base` resolves this for both targets. The CLI is not sandboxed, so it targets the container path explicitly; `~/Library/Application Support/wispr/` is only a fallback for when the container does not exist and is not the shared location.
+
+macOS protects that container as app-private data. Because the CLI is not the owning app, it needs Full Disk Access to read it, and the denial is asymmetric: `fileExists` (stat) succeeds while `contentsOfDirectory` (readdir) returns `EPERM`. `FileAccess` in `WisprCore` exists to keep that distinction from being swallowed — see `.kiro/specs/cli-model-access-errors/`.
 
 ## Concurrency Patterns
 

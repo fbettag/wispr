@@ -25,6 +25,7 @@
 		1C74D2BE2FA6328D00208826 /* ModelStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1C74D29A2FA6328D00208826 /* ModelStatus.swift */; };
 		1C74D2BF2FA6328D00208826 /* Logger.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1C74D2A52FA6328D00208826 /* Logger.swift */; };
 		1C74D2C02FA6328D00208826 /* ModelPaths.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1C74D2A62FA6328D00208826 /* ModelPaths.swift */; };
+		FA00000000000000000000A1 /* FileAccess.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA00000000000000000000F1 /* FileAccess.swift */; };
 		1C74D2C12FA6328D00208826 /* WhisperService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1C74D2A32FA6328D00208826 /* WhisperService.swift */; };
 		1C74D2C22FA6328D00208826 /* TranscriptionEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1C74D2A22FA6328D00208826 /* TranscriptionEngine.swift */; };
 		1C74D2C62FA632A600208826 /* WisprCLI.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1C74D2C32FA632A600208826 /* WisprCLI.swift */; };
@@ -39,8 +40,6 @@
 		1C74D3322FA632B700208826 /* SFSymbols.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1C74D2F82FA632B700208826 /* SFSymbols.swift */; };
 		1C74D3332FA632B700208826 /* StateManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1C74D2D82FA632B700208826 /* StateManager.swift */; };
 		1C74D3342FA632B700208826 /* FillerWordCleaner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1C74D2F62FA632B700208826 /* FillerWordCleaner.swift */; };
-		AB00000000000000000000B1 /* VocabularyCorrector.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB00000000000000000000C1 /* VocabularyCorrector.swift */; };
-		AB00000000000000000000B2 /* VocabularyEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB00000000000000000000C2 /* VocabularyEditorView.swift */; };
 		1C74D3352FA632B700208826 /* RecordingOverlayPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1C74D2F32FA632B700208826 /* RecordingOverlayPanel.swift */; };
 		1C74D3362FA632B700208826 /* CLIInstallDialog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1C74D2EF2FA632B700208826 /* CLIInstallDialog.swift */; };
 		1C74D3372FA632B700208826 /* HotkeyMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1C74D2D42FA632B700208826 /* HotkeyMonitor.swift */; };
@@ -95,10 +94,12 @@
 		AA20000000000000000000A2 /* MeetingDetectionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA2F000000000000000000F2 /* MeetingDetectionService.swift */; };
 		AA30000000000000000000A3 /* MeetingNotificationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA3F000000000000000000F3 /* MeetingNotificationService.swift */; };
 		AA40000000000000000000A4 /* CoreAudioDevice.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA4F000000000000000000F4 /* CoreAudioDevice.swift */; };
+		AB00000000000000000000B1 /* VocabularyCorrector.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB00000000000000000000C1 /* VocabularyCorrector.swift */; };
+		AB00000000000000000000B2 /* VocabularyEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB00000000000000000000C2 /* VocabularyEditorView.swift */; };
 		AEAC6284FE7B470A7CB12A52 /* TranscriptDocument.swift in Sources */ = {isa = PBXBuildFile; fileRef = 422A849C5A34DC9AE1B8437C /* TranscriptDocument.swift */; };
 		D1AD12340000000000000001 /* MeetingDiarizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1AD12340000000000000002 /* MeetingDiarizer.swift */; };
-		D1AD12340000000000000103 /* MeetingHistorySidebar.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1AD12340000000000000104 /* MeetingHistorySidebar.swift */; };
 		D1AD12340000000000000101 /* MeetingHistoryStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1AD12340000000000000102 /* MeetingHistoryStore.swift */; };
+		D1AD12340000000000000103 /* MeetingHistorySidebar.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1AD12340000000000000104 /* MeetingHistorySidebar.swift */; };
 		E4782D9F9369B23177982DC0 /* MeetingAudioEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 85566A381EF49B2D8D58E9FE /* MeetingAudioEngine.swift */; };
 		EAABFC5DC0A565D10326809B /* MeetingTranscript.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6CE95739BEEBDC90BA22323 /* MeetingTranscript.swift */; };
 /* End PBXBuildFile section */
@@ -173,6 +174,7 @@
 		1C74D2A32FA6328D00208826 /* WhisperService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WhisperService.swift; sourceTree = "<group>"; };
 		1C74D2A52FA6328D00208826 /* Logger.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Logger.swift; sourceTree = "<group>"; };
 		1C74D2A62FA6328D00208826 /* ModelPaths.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelPaths.swift; sourceTree = "<group>"; };
+		FA00000000000000000000F1 /* FileAccess.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileAccess.swift; sourceTree = "<group>"; };
 		1C74D2C32FA632A600208826 /* WisprCLI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WisprCLI.swift; sourceTree = "<group>"; };
 		1C74D2C72FA632B700208826 /* AppStateType.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppStateType.swift; sourceTree = "<group>"; };
 		1C74D2C82FA632B700208826 /* AppUpdateInfo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppUpdateInfo.swift; sourceTree = "<group>"; };
@@ -194,7 +196,6 @@
 		1C74D2DB2FA632B700208826 /* UpdateChecker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdateChecker.swift; sourceTree = "<group>"; };
 		1C74D2DD2FA632B700208826 /* ModelRowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelRowView.swift; sourceTree = "<group>"; };
 		1C74D2DE2FA632B700208826 /* SuffixEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SuffixEditorView.swift; sourceTree = "<group>"; };
-		AB00000000000000000000C2 /* VocabularyEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VocabularyEditorView.swift; sourceTree = "<group>"; };
 		1C74D2E02FA632B700208826 /* OnboardingAccessibilityStep.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingAccessibilityStep.swift; sourceTree = "<group>"; };
 		1C74D2E12FA632B700208826 /* OnboardingCompletionStep.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingCompletionStep.swift; sourceTree = "<group>"; };
 		1C74D2E22FA632B700208826 /* OnboardingComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingComponents.swift; sourceTree = "<group>"; };
@@ -215,7 +216,6 @@
 		1C74D2F32FA632B700208826 /* RecordingOverlayPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingOverlayPanel.swift; sourceTree = "<group>"; };
 		1C74D2F42FA632B700208826 /* RecordingOverlayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingOverlayView.swift; sourceTree = "<group>"; };
 		1C74D2F62FA632B700208826 /* FillerWordCleaner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FillerWordCleaner.swift; sourceTree = "<group>"; };
-		AB00000000000000000000C1 /* VocabularyCorrector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VocabularyCorrector.swift; sourceTree = "<group>"; };
 		1C74D2F72FA632B700208826 /* PreviewHelpers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreviewHelpers.swift; sourceTree = "<group>"; };
 		1C74D2F82FA632B700208826 /* SFSymbols.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SFSymbols.swift; sourceTree = "<group>"; };
 		1C74D2F92FA632B700208826 /* UIThemeEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UIThemeEngine.swift; sourceTree = "<group>"; };
@@ -226,8 +226,8 @@
 		1CA1B2C301000000000000B2 /* TranscriptLocation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptLocation.swift; sourceTree = "<group>"; };
 		1CA1B2C301000000000000B3 /* TranscriptDirectoryWatcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptDirectoryWatcher.swift; sourceTree = "<group>"; };
 		1CAEA51C301608D800565CF0 /* ClipboardService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClipboardService.swift; sourceTree = "<group>"; };
-		1CAEA51F301608D800565CF2 /* LayoutKeyResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LayoutKeyResolver.swift; sourceTree = "<group>"; };
 		1CAEA51E301608EE00565CF0 /* UIThemeEngineMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UIThemeEngineMonitor.swift; sourceTree = "<group>"; };
+		1CAEA51F301608D800565CF2 /* LayoutKeyResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LayoutKeyResolver.swift; sourceTree = "<group>"; };
 		422A849C5A34DC9AE1B8437C /* TranscriptDocument.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptDocument.swift; sourceTree = "<group>"; };
 		654DB8601B81B3E819BC5A5C /* MeetingWindowPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeetingWindowPanel.swift; sourceTree = "<group>"; };
 		85566A381EF49B2D8D58E9FE /* MeetingAudioEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeetingAudioEngine.swift; sourceTree = "<group>"; };
@@ -235,9 +235,11 @@
 		AA2F000000000000000000F2 /* MeetingDetectionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeetingDetectionService.swift; sourceTree = "<group>"; };
 		AA3F000000000000000000F3 /* MeetingNotificationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeetingNotificationService.swift; sourceTree = "<group>"; };
 		AA4F000000000000000000F4 /* CoreAudioDevice.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoreAudioDevice.swift; sourceTree = "<group>"; };
+		AB00000000000000000000C1 /* VocabularyCorrector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VocabularyCorrector.swift; sourceTree = "<group>"; };
+		AB00000000000000000000C2 /* VocabularyEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VocabularyEditorView.swift; sourceTree = "<group>"; };
 		D1AD12340000000000000002 /* MeetingDiarizer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeetingDiarizer.swift; sourceTree = "<group>"; };
-		D1AD12340000000000000104 /* MeetingHistorySidebar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeetingHistorySidebar.swift; sourceTree = "<group>"; };
 		D1AD12340000000000000102 /* MeetingHistoryStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeetingHistoryStore.swift; sourceTree = "<group>"; };
+		D1AD12340000000000000104 /* MeetingHistorySidebar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeetingHistorySidebar.swift; sourceTree = "<group>"; };
 		DAA7524D483751DC8BD496D3 /* MeetingStateManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeetingStateManager.swift; sourceTree = "<group>"; };
 		F66665AA7D70423B4954925F /* MeetingTranscriptView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeetingTranscriptView.swift; sourceTree = "<group>"; };
 		F6CE95739BEEBDC90BA22323 /* MeetingTranscript.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeetingTranscript.swift; sourceTree = "<group>"; };
@@ -364,6 +366,7 @@
 		1C74D2A72FA6328D00208826 /* Utilities */ = {
 			isa = PBXGroup;
 			children = (
+				FA00000000000000000000F1 /* FileAccess.swift */,
 				1C74D2A52FA6328D00208826 /* Logger.swift */,
 				1C74D2A62FA6328D00208826 /* ModelPaths.swift */,
 			);
@@ -867,6 +870,7 @@
 				1C74D2BE2FA6328D00208826 /* ModelStatus.swift in Sources */,
 				1C74D2BF2FA6328D00208826 /* Logger.swift in Sources */,
 				1C74D2C02FA6328D00208826 /* ModelPaths.swift in Sources */,
+				FA00000000000000000000A1 /* FileAccess.swift in Sources */,
 				1C74D2C12FA6328D00208826 /* WhisperService.swift in Sources */,
 				1C74D2C22FA6328D00208826 /* TranscriptionEngine.swift in Sources */,
 			);

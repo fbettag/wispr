@@ -52,6 +52,44 @@ Requires macOS 26.2+ and Xcode 26+ (Apple Silicon only)
 - Apple Silicon (ARM64)
 - Microphone permission
 
+## Command-Line Tool
+
+Wispr bundles a CLI for transcribing existing audio and video files offline, at
+`Wispr.app/Contents/Resources/bin/WisprCLI`. Symlink it somewhere on your `PATH`:
+
+```bash
+ln -s /Applications/Wispr.app/Contents/Resources/bin/WisprCLI /usr/local/bin/wispr-cli
+```
+
+```bash
+wispr-cli recording.m4a
+wispr-cli meeting.mp4 --model large-v3 --language en
+wispr-cli podcast.mp3 --output transcript.txt --verbose
+wispr-cli --list-models
+```
+
+Supported formats: MP3, WAV, M4A, FLAC, AAC, MP4, MOV. Models are downloaded by the
+GUI app, so launch Wispr.app and download at least one model first.
+
+### Full Disk Access is required
+
+The CLI reads models from the GUI app's sandbox container, which macOS protects as
+app-private data. Without Full Disk Access it cannot list them and will tell you so.
+To grant it:
+
+1. System Settings → Privacy & Security → Full Disk Access
+2. Click **+**, then press ⌘⇧G and enter your terminal's path, for example
+   `/System/Applications/Utilities/Terminal.app`
+3. Enable the toggle, then **quit and reopen** the terminal — the grant only applies
+   to newly launched processes
+
+Over SSH the relevant process is `sshd`, so add `/usr/libexec/sshd-keygen-wrapper`
+instead. If you use tmux, run `tmux kill-server` and reconnect afterwards, because an
+existing tmux server keeps the permissions it was started with.
+
+Note that Full Disk Access applies to every command run in that terminal, not just
+`wispr-cli`.
+
 ## Architecture
 
 | Layer | Path | Description |
