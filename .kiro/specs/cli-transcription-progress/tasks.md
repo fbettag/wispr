@@ -86,8 +86,8 @@ Worktree: `/Users/sst/code/swift/mac/wispr-cli-progress`
 - Interactive pty capture: 1 hide-cursor / 1 matching show-cursor, 57 in-place
   redraws, exactly 1 newline in the whole progress region, no truncated frames.
 - Whisper's progress path is implemented against WhisperKit's documented
-  callbacks but was **not** run end-to-end: only `parakeet-v3` is downloaded on
-  this machine. The Parakeet path is exercised for real.
+  callbacks. Initially unverified end-to-end (only `parakeet-v3` was downloaded);
+  since verified with `tiny` — see "Whisper path verification" below.
 - Pre-existing flake, unrelated to this change: "AudioEngine audio level stream
   terminates on stop" fails under full-suite load on `main` as well, and passes
   in isolation on both branches.
@@ -165,3 +165,54 @@ controlled runs — idle, 4-way concurrent, during the full test suite, and with
 progress fully enabled (`--verbose --progress always`, pump task active) — are
 all byte-identical to `main` (md5 `5fb684d7…`, 40 830 bytes), on both branches.
 Not attributable to this change, and not reproducible.
+
+## Whisper path verification (round 3)
+
+With `tiny` downloaded, the WhisperKit path is now exercised end-to-end rather
+than only compile-checked. It works: positions advance in exact 30 s increments,
+confirming `segmentCallback`'s absolute segment timestamps are the authoritative
+signal, and the run reaches 100%.
+
+```
+[progress] transcribing   5% 00:30/08:24 elapsed 0.4s eta 3.8s 123.2x
+[progress] transcribing  11% 01:00/08:24 elapsed 0.7s eta 3.6s 122.8x
+…
+[progress] transcribing  95% 08:00/08:24 elapsed 4.0s eta 0.2s 121.2x
+```
+
+Interactive rendering at a 110-column pty, full line with no truncation:
+
+```
+⠙ Transcribing  ▕███████████████████████████████████▏  100%  08:24 / 08:24   elapsed 4.6s   eta 0.0s   112.2×
+```
+
+### R6.2 on the Whisper path
+
+Establishing this needed care, because **`tiny` is not deterministic on all
+inputs — on `main`, independently of this change.** On 161 s of repetitive
+synthetic TTS, five `main` runs produced five different transcripts ranging
+1 334–3 678 bytes (a 2.75× spread), presumably hallucination loops and
+temperature fallback on pathologically repetitive audio. Byte-identity is
+meaningless on such an input, and an early comparison there was what first
+looked like a regression.
+
+On natural, non-repetitive speech `main` is exactly reproducible, which gives a
+usable baseline:
+
+| input | `main` runs | result |
+|---|---|---|
+| 25 s natural speech | 5 | all identical (`5000b8da…`) |
+| 504 s varied speech, ~17 windows | 2 | identical (`e6033dea…`) |
+
+Against those baselines, every branch configuration matches byte for byte:
+
+| configuration | 25 s | 504 s |
+|---|---|---|
+| silent (nil callbacks) | 3/3 match | match |
+| `--progress always` (both callbacks active) | 3/3 match | match |
+| `--verbose --progress always` | — | match |
+
+So supplying `segmentCallback` and the per-token `callback` does not alter the
+transcript, on a file long enough for the callbacks to fire ~17 times. The
+`--output` path writes no trailing newline where the stdout path adds one via
+`print`; content compares equal once that is accounted for.
