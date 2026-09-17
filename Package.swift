@@ -63,7 +63,7 @@ let package = Package(
         // Unit tests.
         .testTarget(
             name: "WisprTests",
-            dependencies: ["WisprApp", "WisprCore"],
+            dependencies: ["WisprApp", "WisprCore", "WisprCLI"],
             path: "wisprTests",
             swiftSettings: swiftSettings
         ),

@@ -1,5 +1,5 @@
 //
-//  ProgressReporter.swift
+//  TerminalProgressReporter.swift
 //  wispr-cli
 //
 //  Progress indication for long-running CLI transcription.
@@ -18,6 +18,7 @@
 
 import Darwin
 import Foundation
+import Synchronization
 import WisprCore
 
 // MARK: - Phases
@@ -43,6 +44,14 @@ nonisolated enum ProgressPhase: Sendable, Equatable {
         case .transcribing: "Transcribed"
         }
     }
+}
+
+// MARK: - Events
+
+/// A progress report tagged with the phase that produced it.
+nonisolated struct ProgressEvent: Sendable {
+    let generation: Int
+    let update: ProgressUpdate
 }
 
 // MARK: - Style
@@ -120,7 +129,7 @@ nonisolated struct ProgressOutput: Sendable {
 /// Lifecycle: `begin` a phase, let updates flow in via the handler from
 /// `transcriptionHandler()` / `decodeHandler()`, `endPhase()`, then `finish()`
 /// exactly once — from a `defer`, so the line is erased even on a thrown error.
-actor ProgressReporter {
+actor TerminalProgressReporter {
 
     // MARK: Configuration
 
@@ -139,8 +148,17 @@ actor ProgressReporter {
     /// most recent one, so there is no unbounded queue and no backpressure on
     /// the decoder. Both are `let` constants of Sendable type, hence readable
     /// from nonisolated context.
-    private let events: AsyncStream<ProgressUpdate>
-    private let eventSink: AsyncStream<ProgressUpdate>.Continuation
+    private let events: AsyncStream<ProgressEvent>
+    private let eventSink: AsyncStream<ProgressEvent>.Continuation
+
+    /// Identifies which phase an event belongs to.
+    ///
+    /// Intake is asynchronous, so an event yielded near the end of one phase can
+    /// arrive after the next phase has begun. Untagged, the decoder's final
+    /// event (a position equal to the whole audio length) would be accepted as a
+    /// transcription position and pin the bar at 100%, after which the monotonic
+    /// clamp would reject every real update for the rest of the run.
+    private var generation = 0
 
     // MARK: Phase state
 
@@ -186,7 +204,7 @@ actor ProgressReporter {
         self.useColor = env["NO_COLOR"] == nil && env["TERM"] != "dumb" && style == .interactive
 
         let (stream, continuation) = AsyncStream.makeStream(
-            of: ProgressUpdate.self,
+            of: ProgressEvent.self,
             bufferingPolicy: .bufferingNewest(1)
         )
         self.events = stream
@@ -195,18 +213,37 @@ actor ProgressReporter {
 
     // MARK: - Handlers handed to WisprCore
 
-    /// A handler for `TranscriptionEngine.transcribe(_:language:onProgress:)`.
-    nonisolated func transcriptionHandler() -> TranscriptionProgressHandler {
+    /// A handler for `TranscriptionEngine.transcribe(_:language:onProgress:)`,
+    /// or nil when progress is disabled.
+    ///
+    /// Returning nil rather than a no-op closure matters: the engines build their
+    /// backend callbacks with `onProgress.map`, so a nil handler means WhisperKit
+    /// is handed nil callbacks and does no per-token work at all. A no-op closure
+    /// would still cost a call for every decoded token.
+    ///
+    /// Must be called *after* `begin(_:total:)` for the phase it belongs to, so
+    /// it captures that phase's generation.
+    func transcriptionHandler() -> TranscriptionProgressHandler? {
+        guard style != .silent else { return nil }
         let sink = eventSink
-        return { update in sink.yield(update) }
+        let phaseGeneration = generation
+        return { update in
+            sink.yield(ProgressEvent(generation: phaseGeneration, update: update))
+        }
     }
 
     /// A handler for `AudioFileDecoder.decode(fileURL:onProgress:)`, converting
     /// decoded sample counts into audio seconds at the decoder's 16 kHz output.
-    nonisolated func decodeHandler() -> DecodeProgressHandler {
+    /// Nil when progress is disabled. Same ordering requirement as above.
+    func decodeHandler() -> DecodeProgressHandler? {
+        guard style != .silent else { return nil }
         let sink = eventSink
+        let phaseGeneration = generation
         return { sampleCount in
-            sink.yield(ProgressUpdate(processedSeconds: Double(sampleCount) / 16_000.0))
+            sink.yield(ProgressEvent(
+                generation: phaseGeneration,
+                update: ProgressUpdate(processedSeconds: Double(sampleCount) / 16_000.0)
+            ))
         }
     }
 
@@ -242,6 +279,8 @@ actor ProgressReporter {
     /// indeterminate spinner.
     func begin(_ newPhase: ProgressPhase, total: Double? = nil) {
         eraseLine()
+        // Invalidate any event still in flight from the previous phase.
+        generation += 1
         phase = newPhase
         phaseStart = .now
         self.total = total
@@ -291,7 +330,11 @@ actor ProgressReporter {
 
     // MARK: - Event handling
 
-    private func apply(_ update: ProgressUpdate) {
+    private func apply(_ event: ProgressEvent) {
+        // Drop events belonging to a phase that has already ended.
+        guard event.generation == generation else { return }
+        let update = event.update
+
         if total == nil, let reported = update.totalSeconds {
             total = reported
         }
@@ -359,6 +402,12 @@ actor ProgressReporter {
         guard hasPosition, let total, total > 0 else { return nil }
         return min(max(position / total, 0), 1)
     }
+
+    /// Internal accessors backing the test seams below.
+    var currentFraction: Double? { fraction }
+    var currentGeneration: Int { generation }
+
+    func applyForTesting(_ event: ProgressEvent) { apply(event) }
 
     // MARK: - Rendering
 
@@ -479,13 +528,25 @@ actor ProgressReporter {
     }
 
     private func bar(fraction: Double, width: Int) -> String {
-        let filled = min(max(Int((Double(width) * fraction).rounded()), 0), width)
+        Self.makeBar(fraction: fraction, width: width)
+    }
+
+    private func percent(_ fraction: Double) -> String {
+        Self.makePercent(fraction)
+    }
+
+    /// Static and pure so the geometry can be tested without a terminal.
+    nonisolated static func makeBar(fraction: Double, width: Int) -> String {
+        let clamped = min(max(fraction, 0), 1)
+        let filled = min(max(Int((Double(width) * clamped).rounded()), 0), width)
         return "▕" + String(repeating: "█", count: filled)
             + String(repeating: "░", count: width - filled) + "▏"
     }
 
-    private func percent(_ fraction: Double) -> String {
-        String(format: "%3d%%", Int((fraction * 100).rounded(.down)))
+    /// Floored, not rounded: 99.9% must not read as 100% before the phase ends.
+    /// Fixed width so the line does not jitter as the number grows.
+    nonisolated static func makePercent(_ fraction: Double) -> String {
+        String(format: "%3d%%", Int((min(max(fraction, 0), 1) * 100).rounded(.down)))
     }
 
     private func truncate(_ line: String, to width: Int) -> String {
@@ -521,6 +582,31 @@ actor ProgressReporter {
     }
 }
 
+// MARK: - Test seams
+
+extension TerminalProgressReporter {
+    /// Feeds an update straight into the state machine, bypassing the
+    /// asynchronous intake so a test observes it deterministically.
+    /// Defaults to the current phase's generation.
+    func ingestForTesting(processedSeconds: Double, generation: Int? = nil) {
+        applyForTesting(ProgressEvent(
+            generation: generation ?? currentGeneration,
+            update: ProgressUpdate(processedSeconds: processedSeconds)
+        ))
+    }
+
+    var fractionForTesting: Double? { currentFraction }
+    var generationForTesting: Int { currentGeneration }
+
+    nonisolated static func barForTesting(fraction: Double, width: Int) -> String {
+        makeBar(fraction: fraction, width: width)
+    }
+
+    nonisolated static func percentForTesting(_ fraction: Double) -> String {
+        makePercent(fraction)
+    }
+}
+
 // MARK: - ANSI
 
 nonisolated enum Ansi {
@@ -539,13 +625,20 @@ nonisolated enum Ansi {
 /// Without this, `^C` during an interactive run leaves the cursor hidden and the
 /// user's shell prompt invisible until they type `reset`.
 nonisolated enum CursorRestorer {
-    // Written once from `install`, before any progress work starts, and only
-    // read by the dispatch sources afterwards.
-    nonisolated(unsafe) private static var sources: [DispatchSourceSignal] = []
+    /// Keeps the dispatch sources alive for the process's lifetime.
+    ///
+    /// A `Mutex` rather than `nonisolated(unsafe)`: the write-once discipline
+    /// would have made the unchecked version sound, but this costs nothing and
+    /// keeps the file free of concurrency escape hatches.
+    private static let sources = Mutex<[DispatchSourceSignal]>([])
 
     static func install(output: ProgressOutput) {
-        guard sources.isEmpty else { return }
+        // Installing twice would leak a second set of sources and double the
+        // cursor-restore writes.
+        let alreadyInstalled = sources.withLock { !$0.isEmpty }
+        guard !alreadyInstalled else { return }
 
+        var installed: [DispatchSourceSignal] = []
         for sig in [SIGINT, SIGTERM] {
             // Ignore the default disposition so the process survives long enough
             // for the handler below to run.
@@ -565,7 +658,8 @@ nonisolated enum CursorRestorer {
                 raise(sig)
             }
             source.resume()
-            sources.append(source)
+            installed.append(source)
         }
+        sources.withLock { $0 = installed }
     }
 }

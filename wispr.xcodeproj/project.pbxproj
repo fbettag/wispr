@@ -28,7 +28,7 @@
 		FA00000000000000000000A1 /* FileAccess.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA00000000000000000000F1 /* FileAccess.swift */; };
 		FB00000000000000000000A1 /* ProgressUpdate.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB00000000000000000000F1 /* ProgressUpdate.swift */; };
 		FB00000000000000000000A2 /* DurationFormat.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB00000000000000000000F2 /* DurationFormat.swift */; };
-		FB00000000000000000000A3 /* ProgressReporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB00000000000000000000F3 /* ProgressReporter.swift */; };
+		FB00000000000000000000A3 /* TerminalProgressReporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB00000000000000000000F3 /* TerminalProgressReporter.swift */; };
 		1C74D2C12FA6328D00208826 /* WhisperService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1C74D2A32FA6328D00208826 /* WhisperService.swift */; };
 		1C74D2C22FA6328D00208826 /* TranscriptionEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1C74D2A22FA6328D00208826 /* TranscriptionEngine.swift */; };
 		1C74D2C62FA632A600208826 /* WisprCLI.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1C74D2C32FA632A600208826 /* WisprCLI.swift */; };
@@ -180,7 +180,7 @@
 		FA00000000000000000000F1 /* FileAccess.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileAccess.swift; sourceTree = "<group>"; };
 		FB00000000000000000000F1 /* ProgressUpdate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProgressUpdate.swift; sourceTree = "<group>"; };
 		FB00000000000000000000F2 /* DurationFormat.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DurationFormat.swift; sourceTree = "<group>"; };
-		FB00000000000000000000F3 /* ProgressReporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProgressReporter.swift; sourceTree = "<group>"; };
+		FB00000000000000000000F3 /* TerminalProgressReporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalProgressReporter.swift; sourceTree = "<group>"; };
 		1C74D2C32FA632A600208826 /* WisprCLI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WisprCLI.swift; sourceTree = "<group>"; };
 		1C74D2C72FA632B700208826 /* AppStateType.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppStateType.swift; sourceTree = "<group>"; };
 		1C74D2C82FA632B700208826 /* AppUpdateInfo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppUpdateInfo.swift; sourceTree = "<group>"; };
@@ -395,7 +395,7 @@
 			isa = PBXGroup;
 			children = (
 				FB00000000000000000000F2 /* DurationFormat.swift */,
-				FB00000000000000000000F3 /* ProgressReporter.swift */,
+				FB00000000000000000000F3 /* TerminalProgressReporter.swift */,
 				1C74D2C32FA632A600208826 /* WisprCLI.swift */,
 			);
 			name = WisprCLI;
@@ -861,7 +861,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				FB00000000000000000000A2 /* DurationFormat.swift in Sources */,
-				FB00000000000000000000A3 /* ProgressReporter.swift in Sources */,
+				FB00000000000000000000A3 /* TerminalProgressReporter.swift in Sources */,
 				1C74D2C62FA632A600208826 /* WisprCLI.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

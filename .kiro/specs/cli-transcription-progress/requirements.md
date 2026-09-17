@@ -40,7 +40,14 @@ existing code paths.
 
 ### R1 — Live progress during transcription
 
-1.1 While transcribing, the CLI SHALL emit progress at least once per second.
+1.1 While transcribing, the interactive (TTY) display SHALL refresh at least once
+per second, so the user can see it is alive.
+
+1.1a The non-TTY channel is a log stream, not a live display, and SHALL instead
+emit on a bounded cadence: whichever comes first of a 5 % advance or 5 seconds.
+Once per second there would mean thousands of lines for a long file, which is
+noise rather than information. Callers wanting a live view should use a terminal
+or `--progress always` on a TTY.
 
 1.2 Progress SHALL be expressed as a fraction of **audio processed**, derived
 from the engine's own position in the audio, not from a wall-clock guess.

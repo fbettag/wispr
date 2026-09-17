@@ -80,7 +80,7 @@ struct DownloadedModelInfo: Sendable {
 
 // MARK: - Argument Conformances
 
-// Declared here rather than in ProgressReporter.swift to keep the rendering code
+// Declared here rather than in TerminalProgressReporter.swift to keep the rendering code
 // free of an ArgumentParser dependency.
 extension ProgressPreference: ExpressibleByArgument {
     nonisolated public static var allValueStrings: [String] {
@@ -139,8 +139,9 @@ struct WisprCLI: AsyncParsableCommand {
 
     mutating func run() async throws {
         // Printed before any discovery so a misdirected root is visible in bug
-        // reports without having to read the source.
-        if verbose {
+        // reports without having to read the source. Suppressed by --quiet,
+        // which promises to silence all stderr output.
+        if verbose && !quiet {
             printStderr("Models root: \(ModelPaths.base.path)")
         }
 
@@ -185,19 +186,28 @@ struct WisprCLI: AsyncParsableCommand {
         // reported normally.
         let modelName = try resolveModel(config.modelName)
 
-        // Suppress FluidAudio SDK logs unless --verbose is set. The SDK writes
-        // INFO-level messages to stderr with no public log-level filter, so we
-        // redirect the fd for the duration of the engine calls.
+        // Suppress FluidAudio SDK logs. The SDK writes INFO-level messages to
+        // stderr with no public log-level filter, so we redirect the fd for the
+        // duration of the engine calls.
+        //
+        // --verbose opts into seeing those logs; --quiet overrides it, because a
+        // flag that promises to suppress all stderr output has to win over one
+        // that merely asks for more of it. Without this, `--quiet --verbose`
+        // printed 20 lines of SDK logging.
         //
         // `suppressStderr()` returns a dup of the original descriptor. Progress
-        // is written to *that*, not to FileHandle.standardError, which by now
+        // is written to *that*, not to FileHandle.standardError, which by then
         // points at /dev/null. TTY detection has to use it too.
-        let savedFd = config.verbose ? Int32(-1) : suppressStderr()
-        defer { if !config.verbose { restoreStderr(savedFd) } }
+        let suppressingSDKLogs = Self.shouldSuppressSDKLogs(
+            verbose: config.verbose,
+            quiet: config.quiet
+        )
+        let savedFd = suppressingSDKLogs ? suppressStderr() : Int32(-1)
+        defer { if suppressingSDKLogs { restoreStderr(savedFd) } }
 
-        let progressOutput = config.verbose
-            ? ProgressOutput.standardError
-            : ProgressOutput(fd: savedFd)
+        let progressOutput = suppressingSDKLogs
+            ? ProgressOutput(fd: savedFd)
+            : ProgressOutput.standardError
 
         let style = Self.progressStyle(
             preference: config.progress,
@@ -206,7 +216,7 @@ struct WisprCLI: AsyncParsableCommand {
             output: progressOutput
         )
 
-        let reporter = ProgressReporter(
+        let reporter = TerminalProgressReporter(
             output: progressOutput,
             style: style,
             verbose: config.verbose,
@@ -244,7 +254,7 @@ struct WisprCLI: AsyncParsableCommand {
         fileURL: URL,
         modelName: String,
         config: TranscribeConfig,
-        reporter: ProgressReporter
+        reporter: TerminalProgressReporter
     ) async throws -> String {
         // 1. Load the model. Length is unknowable up front (CoreML/ANE
         //    compilation dominates), so this phase is indeterminate.
@@ -259,10 +269,13 @@ struct WisprCLI: AsyncParsableCommand {
         let decoder = AudioFileDecoder()
         let meta = try await decoder.metadata(for: fileURL)
 
+        // Handlers are fetched after begin() so they carry that phase's
+        // generation tag; an event from the previous phase is then discarded
+        // rather than being mistaken for a position in this one.
         await reporter.begin(.decoding, total: meta.duration)
         let samples = try await decoder.decode(
             fileURL: fileURL,
-            onProgress: reporter.decodeHandler()
+            onProgress: await reporter.decodeHandler()
         )
         let audioSeconds = Double(samples.count) / 16_000.0
         await reporter.endPhase(detail: "\(formatClock(audioSeconds)) of audio")
@@ -279,11 +292,19 @@ struct WisprCLI: AsyncParsableCommand {
         let result = try await engine.transcribe(
             samples,
             language: language,
-            onProgress: reporter.transcriptionHandler()
+            onProgress: await reporter.transcriptionHandler()
         )
         await reporter.endPhase()
 
         return result.text
+    }
+
+    /// Whether third-party SDK logging on stderr should be redirected away.
+    ///
+    /// `--verbose` opts into seeing it; `--quiet` overrides that, since a flag
+    /// promising to suppress all stderr output must beat one asking for more.
+    static func shouldSuppressSDKLogs(verbose: Bool, quiet: Bool) -> Bool {
+        !verbose || quiet
     }
 
     /// Resolves the effective rendering style.

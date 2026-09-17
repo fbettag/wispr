@@ -91,3 +91,77 @@ Worktree: `/Users/sst/code/swift/mac/wispr-cli-progress`
 - Pre-existing flake, unrelated to this change: "AudioEngine audio level stream
   terminates on stop" fails under full-suite load on `main` as well, and passes
   in isolation on both branches.
+
+## Review round 2 — reviewer feedback
+
+13 threads. Implemented 9, dismissed 3 as factually incorrect, 1 partially.
+
+### Implemented
+
+- **Xcode registration (blocking).** `WisprCore`/`WisprCLI` list sources
+  explicitly in `project.pbxproj`; only the test targets are synchronized
+  groups. The three new files were invisible to `xcodebuild`. Added the four
+  entries per file. `build-xcode` green.
+- **Stale-event race.** Event intake is asynchronous, so the decoder's final
+  report — a position equal to the whole audio length — could be applied *after*
+  `begin(.transcribing)` reset the state, pinning the bar at 100% and making the
+  monotonic clamp reject every real engine update for the rest of the run.
+  Events now carry the generation of the phase that produced them and stale ones
+  are dropped. Regression test:
+  `staleEventFromPreviousPhaseIsDropped`.
+- **No per-token cost when progress is off.** The handler factories return nil
+  when the style is `.silent`, so the engines build nil backend callbacks and
+  WhisperKit does no per-token work at all. A no-op closure would still have
+  cost a call per token.
+- **`--quiet` now beats `--verbose`.** Gated the `Models root:` line, and — found
+  while testing that fix — `--verbose` also disabled the SDK-log suppression, so
+  `--quiet --verbose` emitted 20 lines of FluidAudio logging. `--quiet` is now
+  authoritative for stderr. Verified byte-empty.
+- **Removed the `nonisolated(unsafe)`** on the signal sources in favour of a
+  `Mutex`, per the reviewer's suggestion. Write-once discipline made the
+  unchecked version sound, but this costs nothing.
+- **Tests for the CLI layer** (the largest gap): 33 new tests covering duration
+  and clock formatting boundaries, style resolution from the flags, preference
+  parsing, SDK-log suppression precedence, the reporter state machine
+  (monotonic clamping, clamping to total, phase reset, generation tagging), and
+  bar geometry. Required adding `WisprCLI` to the SPM test target's
+  dependencies; the Xcode scheme's Build action contains only `WisprApp`, so
+  `build-xcode` is unaffected.
+- **Renamed `ProgressReporter` → `TerminalProgressReporter`.** Foundation ships
+  its own `ProgressReporter` in the macOS 26 SDK; unambiguous inside the module
+  but ambiguous from the test target. Same collision-avoidance already applied
+  to `ProgressUpdate` and `TranscriptionProgressHandler`.
+- **Corrected a wrong doc value.** `formatDuration(0.85)` yields `0.8s`, not
+  `0.9s`: 0.85's nearest Double is below 0.85. The design table and my own test
+  both claimed otherwise — the test caught it.
+
+### Dismissed as factually incorrect
+
+- **"`NO_COLOR=` (empty) leaves colour enabled."** It does not.
+  `ProcessInfo.environment` returns `""` for a set-but-empty variable, so
+  `== nil` is false and colour is disabled. Verified by direct experiment. The
+  suggested replacement line was byte-identical to the existing one.
+- **"`public` member on an internal type is rejected by Swift."** It is legal;
+  effective access is capped at internal. Both `swift build` and `xcodebuild`
+  compile it, and a standalone repro compiles.
+- **"`ProgressStyle` lacks `Equatable`, so the CLI won't compile."** Enums
+  without associated values are implicitly `Equatable`. Both CI build jobs were
+  already green on that exact code.
+
+### Partially implemented
+
+- **"The 5 s non-TTY throttle violates the once-per-second requirement."** The
+  inconsistency was real, but the fix was in the spec, not the code: the
+  once-per-second guarantee belongs to the interactive display, where a 100 ms
+  ticker drives it. The non-TTY channel is a log stream; one line per second
+  would be thousands of lines for a long file. R1.1 now scopes the guarantee to
+  the TTY and R1.1a states the log cadence.
+
+### Determinism re-verified
+
+One run during this round differed from `main` by a single word while the
+737-test suite was executing concurrently. It did not reproduce: 13 subsequent
+controlled runs — idle, 4-way concurrent, during the full test suite, and with
+progress fully enabled (`--verbose --progress always`, pump task active) — are
+all byte-identical to `main` (md5 `5fb684d7…`, 40 830 bytes), on both branches.
+Not attributable to this change, and not reproducible.

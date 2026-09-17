@@ -238,7 +238,8 @@ line degrades to the plain form below 60 columns. `NO_COLOR` / `TERM=dumb`
 disables the ANSI styling but keeps the redraw.
 
 **Plain lines (non-TTY, `--verbose`).** No `\r`, no escapes. Emitted on a 5 s
-interval or a 5 % delta, whichever comes first:
+interval or a 5 % delta, whichever comes first — a log cadence, deliberately not
+the interactive channel's 10 Hz refresh (see R1.1a):
 
 ```
 [progress] transcribing 38% 19:23/50:53 elapsed 2:41 eta 4:22 11.8x
@@ -276,7 +277,7 @@ A small `formatDuration` helper replaces the raw `Duration` interpolation:
 
 | Input | Output |
 |---|---|
-| 0.85 s | `0.9s` |
+| 0.86 s | `0.9s` |
 | 22.56 s | `22.6s` |
 | 262 s | `4m 22s` |
 | 5025 s | `1:23:45` |
