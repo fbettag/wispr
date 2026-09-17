@@ -299,17 +299,27 @@ public actor WhisperService {
             return
         }
         Log.whisperService.debug("loadModel — loading '\(modelName)'")
+        let modelFolder: URL
         do {
+            modelFolder = try getModelPath(for: modelName)
+        } catch {
+            throw WisprError.modelLoadFailed(Self.loadErrorDetail(error))
+        }
+        do {
+            // Passing only a model name lets WhisperKit resolve it through
+            // the Hub, even when the model is already downloaded locally.
             let config = WhisperKitConfig(
                 model: modelName,
                 downloadBase: ModelPaths.base,
-                prewarm: true
+                modelFolder: modelFolder.path,
+                prewarm: true,
+                download: false
             )
             whisperKit = try await WhisperKit(config)
             activeModelName = modelName
             Log.whisperService.debug("loadModel — '\(modelName)' loaded and prewarmed successfully")
         } catch {
-            throw WisprError.modelLoadFailed("Failed to load model \(modelName): \(error.localizedDescription)")
+            throw WisprError.modelLoadFailed("\(modelName): \(error.localizedDescription)")
         }
     }
     
@@ -507,12 +517,7 @@ public actor WhisperService {
         for attempt in 0..<maxAttempts {
             do {
                 whisperKit = nil
-                let config = WhisperKitConfig(
-                    model: modelName,
-                    downloadBase: ModelPaths.base,
-                    prewarm: true
-                )
-                whisperKit = try await WhisperKit(config)
+                try await loadModel(modelName)
                 // Reload succeeded
                 return
             } catch {
@@ -525,12 +530,22 @@ public actor WhisperService {
         
         // All retries exhausted — enter degraded state
         whisperKit = nil
-        let description = lastError?.localizedDescription ?? "Unknown error"
+        let description = lastError.map { Self.loadErrorDetail($0) } ?? "Unknown error"
         throw WisprError.modelLoadFailed(
             "Failed to reload model \(modelName) after \(maxAttempts) attempts: \(description)"
         )
     }
     
+    /// Preserve the underlying failure without nesting operation-specific prefixes.
+    static func loadErrorDetail(_ error: Error) -> String {
+        switch error {
+        case WisprError.modelLoadFailed(let message), WisprError.modelDeletionFailed(let message):
+            return message
+        default:
+            return error.localizedDescription
+        }
+    }
+
     // MARK: - Warmup
 
     /// Runs a short silent transcription to force CoreML Neural Engine pipeline compilation.

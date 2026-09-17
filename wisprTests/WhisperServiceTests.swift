@@ -9,7 +9,7 @@
 import Testing
 import Foundation
 @testable import WisprApp
-import WisprCore
+@testable import WisprCore
 
 // MARK: - Mock for download tests (no network)
 
@@ -424,5 +424,58 @@ struct WhisperServiceTests {
         } else {
             Issue.record("Expected .notDownloaded status, got \(status)")
         }
+    }
+}
+
+/// Opt-in integration coverage using a model already downloaded by Wispr.
+/// Run with WISPR_OFFLINE_TEST_MODEL set to its ID and network access blocked.
+@Suite("Whisper offline model loading")
+struct WhisperOfflineModelTests {
+    @Test("missing local files produce a load error without deletion wording")
+    func missingModelHasLoadError() async {
+        let service = WhisperService()
+        let model = "wispr-missing-test-\(UUID().uuidString)"
+        do {
+            try await service.loadModel(model)
+            Issue.record("Expected missing model to fail")
+        } catch {
+            guard case .modelLoadFailed(let detail) = error as? WisprError else {
+                Issue.record("Expected a model load error, got \(error)")
+                return
+            }
+            #expect(!detail.contains("Model deletion failed"))
+            #expect(detail.contains("not found"))
+        }
+    }
+
+    @Test("load error details retain filesystem diagnostics and avoid nested prefixes")
+    func loadErrorDetails() {
+        let filesystemError = NSError(domain: NSCocoaErrorDomain, code: NSFileReadNoPermissionError)
+        #expect(WhisperService.loadErrorDetail(filesystemError) == filesystemError.localizedDescription)
+        let loadError = WisprError.modelLoadFailed("Local model is unavailable")
+        #expect(WhisperService.loadErrorDetail(loadError) == "Local model is unavailable")
+        let pathError = WisprError.modelDeletionFailed("Model directory not found")
+        #expect(WhisperService.loadErrorDetail(pathError) == "Model directory not found")
+    }
+
+    nonisolated private static var modelName: String? {
+        guard let model = ProcessInfo.processInfo.environment["WISPR_OFFLINE_TEST_MODEL"]?
+            .trimmingCharacters(in: .whitespacesAndNewlines), !model.isEmpty else { return nil }
+        return model
+    }
+
+    @Test("loads and reloads a downloaded model and its tokenizer",
+          .enabled(if: modelName != nil))
+    func loadDownloadedModel() async throws {
+        let model = try #require(Self.modelName)
+        let service = WhisperService()
+        try await service.loadModel(model)
+        #expect(await service.activeModel() == model)
+        try await service.reloadModelWithRetry(maxAttempts: 1)
+        #expect(await service.activeModel() == model)
+        await service.unloadCurrentModel()
+        try await service.loadModel(model)
+        #expect(await service.activeModel() == model)
+        await service.unloadCurrentModel()
     }
 }
