@@ -176,6 +176,21 @@ public actor CompositeTranscriptionEngine: TranscriptionEngine {
         return try await engines[idx].transcribe(audioSamples, language: language)
     }
 
+    public func transcribe(
+        _ audioSamples: [Float],
+        language: TranscriptionLanguage,
+        onProgress: TranscriptionProgressHandler?
+    ) async throws -> TranscriptionResult {
+        guard let idx = activeEngineIndex else {
+            throw WisprError.modelNotDownloaded
+        }
+        return try await engines[idx].transcribe(
+            audioSamples,
+            language: language,
+            onProgress: onProgress
+        )
+    }
+
     public func supportsEndOfUtteranceDetection() async -> Bool {
         guard let idx = activeEngineIndex else { return false }
         return await engines[idx].supportsEndOfUtteranceDetection()

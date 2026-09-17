@@ -54,6 +54,21 @@ public protocol TranscriptionEngine: Actor {
         language: TranscriptionLanguage
     ) async throws -> TranscriptionResult
 
+    /// Transcribes a complete audio buffer, reporting how far through the audio
+    /// the engine has got as it goes.
+    ///
+    /// Intended for long files where the caller needs to show progress —
+    /// `wispr-cli` uses this. The handler is called from the engine's decoding
+    /// context and must be non-blocking (see `TranscriptionProgressHandler`).
+    ///
+    /// A default implementation forwards to `transcribe(_:language:)` and
+    /// reports nothing, so engines are free not to implement it.
+    func transcribe(
+        _ audioSamples: [Float],
+        language: TranscriptionLanguage,
+        onProgress: TranscriptionProgressHandler?
+    ) async throws -> TranscriptionResult
+
     // MARK: - Streaming Transcription
 
     /// Accepts a stream of audio chunks and yields partial transcription results
@@ -79,5 +94,15 @@ extension TranscriptionEngine {
     /// Convenience overload with default retry count.
     public func reloadModelWithRetry() async throws {
         try await reloadModelWithRetry(maxAttempts: 3)
+    }
+
+    /// Default: engines that can't report position just transcribe silently.
+    /// Callers fall back to an indeterminate indicator when no update arrives.
+    public func transcribe(
+        _ audioSamples: [Float],
+        language: TranscriptionLanguage,
+        onProgress: TranscriptionProgressHandler?
+    ) async throws -> TranscriptionResult {
+        try await transcribe(audioSamples, language: language)
     }
 }

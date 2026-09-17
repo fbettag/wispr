@@ -30,6 +30,11 @@ public actor AudioFileDecoder {
     private static let targetSampleRate: Double = 16_000
     private static let targetChannelCount: AVAudioChannelCount = 1
 
+    /// How much decoded audio to accumulate between progress reports.
+    /// Keeps the callback rate to ~4/s of decoded audio rather than once per
+    /// sample buffer, which on a long file would be thousands of calls.
+    private static let progressReportInterval: Double = 0.25
+
     public init() {}
 
     /// Audio output settings for 16 kHz mono Float32 PCM.
@@ -82,7 +87,19 @@ public actor AudioFileDecoder {
 
     // MARK: - Full Decode
 
-    public func decode(fileURL: URL) async throws -> [Float] {
+    /// Decodes an entire file to 16 kHz mono Float32 samples.
+    ///
+    /// - Parameters:
+    ///   - fileURL: The audio or video file to decode.
+    ///   - onProgress: Optional, called with the running count of decoded
+    ///     samples. Throttled internally to roughly every
+    ///     `progressReportInterval` seconds of audio so a long file doesn't
+    ///     invoke it thousands of times. Callers can divide by
+    ///     `AudioMetadata.estimatedSampleCount` for a fraction.
+    public func decode(
+        fileURL: URL,
+        onProgress: DecodeProgressHandler? = nil
+    ) async throws -> [Float] {
         let (reader, output) = try await Self.makeReader(for: fileURL)
 
         guard reader.startReading() else {
@@ -91,9 +108,17 @@ public actor AudioFileDecoder {
             )
         }
 
+        let reportEvery = Int(Self.progressReportInterval * Self.targetSampleRate)
+        var nextReportAt = reportEvery
+
         var samples = [Float]()
         while let sampleBuffer = output.copyNextSampleBuffer() {
             try samples.append(contentsOf: Self.extractFloats(from: sampleBuffer))
+
+            if let onProgress, samples.count >= nextReportAt {
+                onProgress(samples.count)
+                nextReportAt = samples.count + reportEvery
+            }
         }
 
         guard reader.status == .completed else {
@@ -102,6 +127,7 @@ public actor AudioFileDecoder {
             )
         }
 
+        onProgress?(samples.count)
         return samples
     }
 

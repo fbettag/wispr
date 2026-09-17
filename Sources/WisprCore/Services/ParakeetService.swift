@@ -468,6 +468,27 @@ extension ParakeetService: TranscriptionEngine {
         _ audioSamples: [Float],
         language: TranscriptionLanguage
     ) async throws -> TranscriptionResult {
+        try await transcribe(audioSamples, language: language, onProgress: nil)
+    }
+
+    /// Transcribes audio samples, reporting progress as it goes.
+    ///
+    /// FluidAudio exposes a 0...1 fraction on `transcriptionProgressStream`, so
+    /// the work here is draining that stream and scaling it to audio seconds.
+    ///
+    /// Two behaviours of the SDK matter to callers:
+    /// - The stream is only opened when the input exceeds ~15 s
+    ///   (`ASRConstants.maxModelSamples`). Short clips report nothing, which is
+    ///   why consumers need an indeterminate fallback.
+    /// - It yields 0.0 on start and 1.0 on finish.
+    ///
+    /// The EOU model takes the realtime path (`transcribeWithEou`), which the CLI
+    /// never uses, so it reports nothing.
+    public func transcribe(
+        _ audioSamples: [Float],
+        language: TranscriptionLanguage,
+        onProgress: TranscriptionProgressHandler?
+    ) async throws -> TranscriptionResult {
         if activeModelName == ModelInfo.KnownID.parakeetEou {
             return try await transcribeWithEou(audioSamples)
         }
@@ -482,6 +503,31 @@ extension ParakeetService: TranscriptionEngine {
         }
 
         let startTime = Date()
+
+        // Subscribe before transcribing so no early fraction is missed.
+        let progressPump: Task<Void, Never>?
+        if let onProgress {
+            let audioDuration = Double(audioSamples.count) / 16000.0
+            let stream = await asrManager.transcriptionProgressStream
+            progressPump = Task {
+                do {
+                    for try await fraction in stream {
+                        onProgress(ProgressUpdate(
+                            processedSeconds: fraction * audioDuration,
+                            totalSeconds: audioDuration,
+                            textTail: nil
+                        ))
+                    }
+                } catch {
+                    // A failed stream only means progress stops. The transcribe
+                    // call below surfaces the real error to the caller.
+                }
+            }
+        } else {
+            progressPump = nil
+        }
+        defer { progressPump?.cancel() }
+
         var decoderState = try TdtDecoderState()
         let result = try await asrManager.transcribe(audioSamples, decoderState: &decoderState)
 

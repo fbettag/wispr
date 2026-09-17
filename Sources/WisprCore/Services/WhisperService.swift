@@ -40,6 +40,11 @@ public actor WhisperService {
     /// Stores true when a model is being downloaded (for concurrent download prevention)
     private var downloadTasks: [String: Bool] = [:]
 
+    /// Length of one Whisper decoding window, in seconds. Whisper's architecture
+    /// fixes this at 30 s (480 000 samples at 16 kHz); it is not configurable.
+    /// Used to turn a window index into an audio position for progress reporting.
+    nonisolated static let windowSeconds: Double = 30.0
+
     public init() {}
 
     /// Ensures the `ModelPaths.base` directory exists on disk.
@@ -387,6 +392,37 @@ public actor WhisperService {
         _ audioSamples: [Float],
         language: TranscriptionLanguage
     ) async throws -> TranscriptionResult {
+        try await transcribe(audioSamples, language: language, onProgress: nil)
+    }
+
+    /// Transcribes audio samples to text, reporting progress as it goes.
+    ///
+    /// Identical to `transcribe(_:language:)` apart from the reporting: the
+    /// decode options, filtering, and result are the same, so passing a handler
+    /// cannot change the transcript.
+    ///
+    /// Progress comes from two WhisperKit hooks:
+    ///
+    /// - `segmentCallback` fires once per completed 30 s window with segments
+    ///   carrying absolute timestamps, so `max(end)` is the authoritative audio
+    ///   position. This is the accurate but coarse signal (~2 ticks/minute of
+    ///   audio) and it also supplies the text tail.
+    /// - `callback` fires per decoded token. Used only as a liveness signal, via
+    ///   `windowId` as a lower bound on position, so a caller can tell "slow"
+    ///   from "hung" between window boundaries. It returns nil so decoding is
+    ///   never interrupted, and does no work beyond one comparison and the
+    ///   handler call.
+    ///
+    /// - Parameters:
+    ///   - audioSamples: The audio samples to transcribe (Float array, 16kHz sample rate)
+    ///   - language: The language mode for transcription
+    ///   - onProgress: Called as the engine advances through the audio. Must be
+    ///     non-blocking — see `TranscriptionProgressHandler`.
+    public func transcribe(
+        _ audioSamples: [Float],
+        language: TranscriptionLanguage,
+        onProgress: TranscriptionProgressHandler?
+    ) async throws -> TranscriptionResult {
         // Requirement 3.1: Check that a model is loaded
         guard let whisperKit = whisperKit else {
             Log.whisperService.error("transcribe — whisperKit is nil, no model loaded")
@@ -424,12 +460,42 @@ public actor WhisperService {
             // When language is nil (auto-detect), enable detectLanguage so
             // WhisperKit runs its language identification pass instead of
             // falling back to the default "en".
+            //
+            // The two progress callbacks are nil when no handler was supplied,
+            // so the app's code path is exactly the call it makes today.
+            let tokenCallback: TranscriptionCallback = onProgress.map { report in
+                { progress in
+                    // Coarse lower bound: the start of the window being decoded.
+                    // Consumers clamp monotonically, so this never walks the
+                    // displayed position backwards after a segment report.
+                    report(ProgressUpdate(
+                        processedSeconds: Double(progress.windowId) * Self.windowSeconds,
+                        totalSeconds: audioDuration,
+                        textTail: nil
+                    ))
+                    return nil  // never interrupt decoding
+                }
+            }
+
+            let segmentCallback: SegmentDiscoveryCallback? = onProgress.map { report in
+                { segments in
+                    guard let furthest = segments.map(\.end).max() else { return }
+                    report(ProgressUpdate(
+                        processedSeconds: Double(furthest),
+                        totalSeconds: audioDuration,
+                        textTail: segments.last?.text
+                    ))
+                }
+            }
+
             let results = try await whisperKit.transcribe(
                 audioArray: audioSamples,
                 decodeOptions: DecodingOptions(
                     language: languageCode,
                     detectLanguage: languageCode == nil
-                )
+                ),
+                callback: tokenCallback,
+                segmentCallback: segmentCallback
             )
             
             Log.whisperService.debug("transcribe — WhisperKit returned \(results.count) segment(s)")
