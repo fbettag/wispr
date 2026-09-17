@@ -33,7 +33,7 @@ Wispr runs entirely on-device — your audio never leaves your Mac.
 ### Homebrew (Recommended)
 
 ```bash
-brew tap sebsto/macos
+brew tap sebsto/macos && brew trust sebsto/macos
 brew install wispr
 ```
 
@@ -45,17 +45,6 @@ Requires macOS 26.2+ and Xcode 26+ (Apple Silicon only)
 2. Open `wispr.xcodeproj` in Xcode
 3. Build and run (⌘R)
 4. Follow the onboarding flow to grant permissions and download a model
-
-### Xcode 26.4 build fix
-
-~~Previously, Xcode 26.4 required a manual patch to FluidAudio's `AsrManager`
-for Swift 6 concurrency compliance. This is no longer needed — FluidAudio
-dropped its `swift-transformers` dependency (removing the version conflict with
-WhisperKit) and resolved the concurrency issue in their latest release
-([FluidInference/FluidAudio#448](https://github.com/FluidInference/FluidAudio/issues/448)).
-No workaround is required; the project builds cleanly on Xcode 26.4.~~
-
-See also: [argmaxinc/WhisperKit#451](https://github.com/argmaxinc/WhisperKit/issues/451).
 
 ## Requirements
 
