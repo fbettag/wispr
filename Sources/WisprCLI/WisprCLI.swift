@@ -13,8 +13,17 @@ import WisprCore
 // MARK: - CLI Error Types
 
 enum CLIError: Error, CustomStringConvertible, Sendable {
-    case noModelsDirectory
-    case noDownloadedModels
+    /// A path that exists but could not be read. `what` names the subject,
+    /// e.g. "Wispr's model directory".
+    ///
+    /// Kept distinct from `noDownloadedModels` because the two used to be
+    /// conflated: a permission denial on the GUI's sandbox container was
+    /// reported as "no models downloaded", telling users to re-download models
+    /// they already had.
+    case unreadable(what: String, error: FileReadError)
+
+    case noModelsDirectory(path: String)
+    case noDownloadedModels(searched: String)
     case noActiveModel
     case modelNotFound(String, available: [String])
     case fileNotFound(String)
@@ -23,10 +32,24 @@ enum CLIError: Error, CustomStringConvertible, Sendable {
     // outside MainActor when formatting CLI error output.
     nonisolated var description: String {
         switch self {
-        case .noModelsDirectory:
-            "Wispr.app has not been set up yet. Please launch Wispr.app and download at least one model before using the CLI."
-        case .noDownloadedModels:
-            "No models downloaded. Please open Wispr.app and download at least one model, then try again. Run --list-models to verify."
+        case .unreadable(let what, let error):
+            FileAccess.explain(error, what: what)
+        case .noModelsDirectory(let path):
+            """
+            Wispr.app has not been set up yet. No model directory exists at:
+
+              \(path)
+
+            Launch Wispr.app and download at least one model before using the CLI.
+            """
+        case .noDownloadedModels(let searched):
+            """
+            No models downloaded. Searched:
+
+              \(searched)
+
+            Open Wispr.app and download at least one model, then run --list-models to verify.
+            """
         case .noActiveModel:
             "No active model set. Use --model <name> or select a model in Wispr.app. Run --list-models to see available models."
         case .modelNotFound(let name, let available):
@@ -91,6 +114,12 @@ struct WisprCLI: AsyncParsableCommand {
     var listModels = false
 
     mutating func run() async throws {
+        // Printed before any discovery so a misdirected root is visible in bug
+        // reports without having to read the source.
+        if verbose {
+            printStderr("Models root: \(ModelPaths.base.path)")
+        }
+
         if listModels {
             try doListModels()
         } else {
@@ -167,7 +196,7 @@ struct WisprCLI: AsyncParsableCommand {
     func resolveModel(_ explicitName: String?) throws -> String {
         let downloadedModels = try discoverDownloadedModels()
         guard !downloadedModels.isEmpty else {
-            throw CLIError.noDownloadedModels
+            throw CLIError.noDownloadedModels(searched: ModelPaths.models.path)
         }
 
         if let name = explicitName {
@@ -181,7 +210,7 @@ struct WisprCLI: AsyncParsableCommand {
         }
 
         // Try GUI app's active model from its sandboxed container plist.
-        if let active = guiDefaultsString(forKey: "activeModelName"),
+        if let active = try guiDefaultsString(forKey: "activeModelName"),
            downloadedModels.contains(where: { $0.name == active }) {
             return active
         }
@@ -193,15 +222,29 @@ struct WisprCLI: AsyncParsableCommand {
         let fm = FileManager.default
         let modelsDir = ModelPaths.models
 
+        // Existence only distinguishes "never set up" from "set up but
+        // unreadable". It is not a permission check: `fileExists` uses stat(),
+        // which succeeds even when enumeration is refused.
         guard fm.fileExists(atPath: modelsDir.path) else {
-            throw CLIError.noModelsDirectory
+            throw CLIError.noModelsDirectory(path: modelsDir.path)
         }
+
+        // Single authoritative read of the models directory. Reused by the
+        // Parakeet V3 scan below so the directory is not read twice, and so a
+        // permission denial is detected in exactly one place.
+        let entries = try readDirectory(modelsDir, describedAs: "Wispr's model directory")
 
         var results = [DownloadedModelInfo]()
 
         // Scan Whisper models: <models>/argmaxinc/whisperkit-coreml/<variant>/
+        // An absent directory is legitimate on a Parakeet-only install, so
+        // existence is checked first and only the read itself is strict.
         let whisperDir = ModelPaths.whisperModels
-        if let variants = try? fm.contentsOfDirectory(atPath: whisperDir.path) {
+        if fm.fileExists(atPath: whisperDir.path) {
+            let variants = try readDirectory(
+                whisperDir,
+                describedAs: "Wispr's Whisper model directory"
+            )
             for variant in variants where !variant.hasPrefix(".") {
                 let variantURL = whisperDir.appendingPathComponent(variant)
                 var isDir: ObjCBool = false
@@ -221,19 +264,17 @@ struct WisprCLI: AsyncParsableCommand {
 
         // Scan Parakeet V3 models: directories matching "parakeet-tdt-*-v3*"
         // The SDK leaf name varies by FluidAudio version (e.g. "parakeet-tdt-0.6b-v3").
-        if let entries = try? fm.contentsOfDirectory(atPath: modelsDir.path) {
-            for entry in entries where entry.hasPrefix("parakeet-tdt-") && entry.contains("v3") {
-                let entryURL = modelsDir.appendingPathComponent(entry)
-                var isDir: ObjCBool = false
-                if fm.fileExists(atPath: entryURL.path, isDirectory: &isDir), isDir.boolValue {
-                    let size = directorySize(at: entryURL)
-                    results.append(DownloadedModelInfo(
-                        name: "parakeet-v3",
-                        sizeOnDisk: size,
-                        path: entryURL
-                    ))
-                    break // Only one V3 model
-                }
+        for entry in entries where entry.hasPrefix("parakeet-tdt-") && entry.contains("v3") {
+            let entryURL = modelsDir.appendingPathComponent(entry)
+            var isDir: ObjCBool = false
+            if fm.fileExists(atPath: entryURL.path, isDirectory: &isDir), isDir.boolValue {
+                let size = directorySize(at: entryURL)
+                results.append(DownloadedModelInfo(
+                    name: "parakeet-v3",
+                    sizeOnDisk: size,
+                    path: entryURL
+                ))
+                break // Only one V3 model
             }
         }
 
@@ -245,6 +286,16 @@ struct WisprCLI: AsyncParsableCommand {
         }
 
         return results
+    }
+
+    /// Lists a directory, converting any failure into a `CLIError.unreadable`
+    /// that names the subject and carries the resolved path.
+    private func readDirectory(_ url: URL, describedAs what: String) throws -> [String] {
+        do {
+            return try FileAccess.readDirectory(at: url)
+        } catch let error as FileReadError {
+            throw CLIError.unreadable(what: what, error: error)
+        }
     }
 
     private func extractWhisperModelName(from variant: String) -> String {
@@ -275,10 +326,10 @@ struct WisprCLI: AsyncParsableCommand {
     func doListModels() throws {
         let models = try discoverDownloadedModels()
         if models.isEmpty {
-            throw CLIError.noDownloadedModels
+            throw CLIError.noDownloadedModels(searched: ModelPaths.models.path)
         }
 
-        let activeModel = guiDefaultsString(forKey: "activeModelName")
+        let activeModel = try guiDefaultsString(forKey: "activeModelName")
 
         for model in models {
             let sizeMB = Double(model.sizeOnDisk) / 1_000_000
@@ -292,9 +343,30 @@ struct WisprCLI: AsyncParsableCommand {
     /// Reads a string value from the GUI app's UserDefaults plist.
     /// Uses `ModelPaths.guiDefaultsPlist` which resolves to the sandboxed
     /// container plist when running outside the sandbox (CLI).
-    private func guiDefaultsString(forKey key: String) -> String? {
-        guard let data = try? Data(contentsOf: ModelPaths.guiDefaultsPlist),
-              let plist = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any]
+    ///
+    /// An absent or malformed plist means "active model unknown" and returns
+    /// `nil`. A permission denial throws, because it is the same root cause as
+    /// an unreadable model directory and deserves the same guidance rather than
+    /// degrading into a misleading "no active model" message.
+    private func guiDefaultsString(forKey key: String) throws -> String? {
+        let url = ModelPaths.guiDefaultsPlist
+
+        // Absent is a normal state: the GUI may never have launched. This does
+        // not mask a denial, since `fileExists` succeeds on protected paths.
+        guard FileManager.default.fileExists(atPath: url.path) else { return nil }
+
+        let data: Data
+        do {
+            data = try Data(contentsOf: url)
+        } catch {
+            guard FileAccess.isPermissionDenied(error) else { return nil }
+            throw CLIError.unreadable(
+                what: "Wispr's preferences file",
+                error: FileReadError(path: url.path, failure: .permissionDenied)
+            )
+        }
+
+        guard let plist = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any]
         else { return nil }
         return plist[key] as? String
     }
