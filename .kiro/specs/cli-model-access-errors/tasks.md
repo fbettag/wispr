@@ -18,12 +18,14 @@ Access.
 
 - [x] 1. Restructure `CLIError`
   - [x] 1.1 Add the `unreadable` case and attach paths to the existing cases
-    - Add `case unreadable(what: String, path: String, reason: FailureReason)` to `CLIError`
-    - Add the nested `enum FailureReason: Sendable { case permissionDenied; case other(String) }`
+    - Add `case unreadable(what: String, error: FileReadError)` to `CLIError`
+    - Add `FileReadFailure` (`.permissionDenied` / `.other(String)`) and `FileReadError`
+      (`path` + `failure`) as top-level types in `WisprCore`, not nested in `CLIError`, so the
+      classifier and guidance are reachable from the test target
     - Change `noModelsDirectory` to `noModelsDirectory(path: String)`
     - Change `noDownloadedModels` to `noDownloadedModels(searched: String)`
-    - Keep `FailureReason.other` carrying a pre-rendered `String`, not an `Error`, so the existing
-      `Sendable` conformance on `CLIError` holds without an unchecked escape hatch
+    - Keep `FileReadFailure.other` carrying a pre-rendered `String`, not an `Error`, so `Sendable`
+      holds on both `FileReadError` and `CLIError` without an unchecked escape hatch
     - _Requirements: 1.1, 2.1, 2.2, 2.3_
 
   - [x] 1.2 Write the error descriptions
@@ -39,9 +41,12 @@ Access.
 - [x] 2. Add the permission classifier
   - [x] 2.1 Implement `FileAccess.isPermissionDenied(_:)`
     - Match `NSCocoaErrorDomain` / `NSFileReadNoPermissionError`
-    - Match `NSPOSIXErrorDomain` with `EPERM` or `EACCES`, at the top level and across
-      `NSError.underlyingErrors`
-    - _Requirements: 5.1, 5.2_
+    - Match `NSPOSIXErrorDomain` with `EPERM` or `EACCES`
+    - Walk the chain recursively rather than checking one level: `NSError.underlyingErrors` covers
+      both `NSUnderlyingErrorKey` and `NSMultipleUnderlyingErrorsKey`, but only descends one level,
+      so a wrapper wrapping a wrapper would hide the denial. Cap the depth so a pathological chain
+      cannot recurse without bound.
+    - _Requirements: 5.1, 5.2, 5.3_
 
 - [x] 3. Make directory reads strict
   - [x] 3.1 Add the `readDirectory(_:describedAs:)` helper
@@ -131,7 +136,7 @@ Access.
 ## Notes
 
 - Tests were requested during implementation, so task 8 is no longer optional. Implemented in
-  `wisprTests/FileAccessTests.swift`: 20 tests in 3 suites, covering classification, strict reads, and
+  `wisprTests/FileAccessTests.swift`: 23 tests in 3 suites, covering classification, strict reads, and
   message content. All passing.
 - The classifier, strict read, and guidance text landed in `WisprCore` rather than the CLI, because
   the test target depends on `WisprApp` and `WisprCore` but not on the `WisprCLI` executable target.

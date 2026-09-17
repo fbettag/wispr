@@ -66,6 +66,33 @@ struct FileAccessClassificationTests {
         #expect(FileAccess.isPermissionDenied(wrapped))
     }
 
+    @Test("A denial nested two wrappers deep is still found")
+    func testDoublyWrappedDenial() {
+        // `underlyingErrors` only reports one level, so a wrapper whose own
+        // underlying error is another wrapper needs the chain to be walked.
+        let inner = cocoaError(NSFileReadUnknownError, underlying: posixError(EPERM))
+        let outer = cocoaError(NSFileReadUnknownError, underlying: inner)
+        #expect(FileAccess.isPermissionDenied(outer))
+    }
+
+    @Test("A Cocoa no-permission error nested inside a wrapper is found")
+    func testNestedCocoaNoPermission() {
+        let inner = cocoaError(NSFileReadNoPermissionError)
+        let outer = cocoaError(NSFileReadUnknownError, underlying: inner)
+        #expect(FileAccess.isPermissionDenied(outer))
+    }
+
+    @Test("A deeply nested non-denial terminates instead of recursing forever")
+    func testDeepChainTerminates() {
+        // Guards the depth cap. A chain this deep does not occur in practice;
+        // the point is that traversal ends rather than spinning.
+        var error = cocoaError(NSFileNoSuchFileError)
+        for _ in 0..<50 {
+            error = cocoaError(NSFileReadUnknownError, underlying: error)
+        }
+        #expect(!FileAccess.isPermissionDenied(error))
+    }
+
     // MARK: - Non-denials
 
     @Test("A missing-file error is not a denial")

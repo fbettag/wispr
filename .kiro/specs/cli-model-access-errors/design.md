@@ -19,7 +19,7 @@ bug is entirely in how the CLI handles the enumeration failure that follows.
 |---|---|
 | `Sources/WisprCore/Utilities/FileAccess.swift` | **New** — permission classifier, strict directory read, and the Full Disk Access guidance text |
 | `Sources/WisprCLI/WisprCLI.swift` | Restructure `CLIError`, route reads through `FileAccess`, make the preferences read throwing, print the resolved root under `--verbose` |
-| `wisprTests/FileAccessTests.swift` | **New** — 20 tests across classification, strict reads, and message content |
+| `wisprTests/FileAccessTests.swift` | **New** — 23 tests across classification, strict reads, and message content |
 | `CLAUDE.md` | Correct the documented shared model path |
 | `README.md` | Add a CLI section documenting the Full Disk Access prerequisite |
 
@@ -69,7 +69,7 @@ directory is usable. It stays only to distinguish "never set up" from "set up bu
 **Classification degrades safely.** If the permission classifier fails to recognise an error shape,
 the error still surfaces via the `.other` case with the underlying description attached. A
 misclassification produces a verbose but truthful message, never a wrong one. This is what
-Requirement 5.3 asks for, and it is the reason the design does not depend on getting the error codes
+Requirement 5.4 asks for, and it is the reason the design does not depend on getting the error codes
 exactly right.
 
 **Guidance lives in the error description.** ArgumentParser renders a thrown error by way of
@@ -129,25 +129,41 @@ way; `what` and the error's `path` are enough for the user to tell which read fa
 ```swift
 public nonisolated enum FileAccess {
     public static func isPermissionDenied(_ error: Error) -> Bool {
-        let nsError = error as NSError
-        if nsError.domain == NSCocoaErrorDomain,
-           nsError.code == NSFileReadNoPermissionError {
+        isPermissionDenied(error as NSError, depth: 0)
+    }
+
+    private static func isPermissionDenied(_ error: NSError, depth: Int) -> Bool {
+        if error.domain == NSCocoaErrorDomain,
+           error.code == NSFileReadNoPermissionError {
             return true
         }
-        if isPOSIXDenial(nsError) { return true }
-        return nsError.underlyingErrors.contains { isPOSIXDenial($0 as NSError) }
+        if isPOSIXDenial(error) { return true }
+
+        guard depth < maxUnderlyingErrorDepth else { return false }
+        return error.underlyingErrors.contains {
+            isPermissionDenied($0 as NSError, depth: depth + 1)
+        }
     }
 
     private static func isPOSIXDenial(_ error: NSError) -> Bool {
         guard error.domain == NSPOSIXErrorDomain else { return false }
         return error.code == Int(EPERM) || error.code == Int(EACCES)
     }
+
+    private static let maxUnderlyingErrorDepth = 5
 }
 ```
 
 Both `EPERM` and `EACCES` are matched: TCC denials surface as `EPERM`, ordinary filesystem
-permission failures as `EACCES`. Foundation frequently wraps the POSIX error inside a Cocoa error,
-so the underlying errors are inspected as well as the top level.
+permission failures as `EACCES`.
+
+Foundation frequently wraps the POSIX error inside a Cocoa error, so the chain is walked rather than
+just the top level. `NSError.underlyingErrors` reports both the singular `NSUnderlyingErrorKey` and
+the plural `NSMultipleUnderlyingErrorsKey` — verified empirically, a Cocoa error carrying only
+`NSUnderlyingErrorKey` yields `underlyingErrors.count == 1` — so neither form needs handling of its
+own. What does need handling is a wrapper whose underlying error is itself a wrapper, since
+`underlyingErrors` only descends one level. The traversal is therefore recursive, with a depth cap so
+a pathological or self-referential chain cannot recurse without bound.
 
 ### Strict directory read
 
@@ -310,8 +326,18 @@ Unicode arrow, matching how the guidance reads in the issue.
 
 ## Data Models
 
-No new data models. `DownloadedModelInfo` and `TranscribeConfig` are unchanged. The only new type is
-the nested `CLIError.FailureReason` enum described above.
+`DownloadedModelInfo` and `TranscribeConfig` are unchanged. Three types are added:
+
+| Type | Module | Purpose |
+|---|---|---|
+| `FileReadFailure` | `WisprCore` | Why a read failed: `.permissionDenied` or `.other(String)`. `Sendable`, `Equatable`. |
+| `FileReadError` | `WisprCore` | The failure plus the `path` it occurred on. Conforms to `Error`, `Sendable`, `Equatable`. |
+| `CLIError.unreadable(what:error:)` | `WisprCLI` | New case carrying a subject label and a `FileReadError`. |
+
+`FileReadFailure` and `FileReadError` are top-level types in `WisprCore`, not nested inside
+`CLIError`, so the classifier and the guidance text are reachable from the test target — see the
+placement rationale above. `CLIError` gains no nested types; `noModelsDirectory` and
+`noDownloadedModels` gain associated `String` paths.
 
 ## Correctness Properties
 
@@ -343,8 +369,9 @@ CLI resolved and attempted to read.
 ### Property 4: Permission denials are classified
 
 *For any* error whose domain and code is `NSCocoaErrorDomain`/`NSFileReadNoPermissionError`, or
-`NSPOSIXErrorDomain` with `EPERM` or `EACCES` at the top level or among its underlying errors,
-`FileAccess.isPermissionDenied` returns `true`.
+`NSPOSIXErrorDomain` with `EPERM` or `EACCES`, at the top level or anywhere in its chain of
+underlying errors within the depth cap, `FileAccess.isPermissionDenied` returns `true`. Traversal
+terminates on any chain, however deep or self-referential.
 
 **Validates: Requirements 5.1, 5.2**
 
@@ -353,7 +380,7 @@ CLI resolved and attempted to read.
 *For any* error not recognised as a permission denial, the thrown `.unreadable` carries
 `.other(description)` and its `description` includes that underlying text.
 
-**Validates: Requirements 1.5, 5.3**
+**Validates: Requirements 1.5, 5.4**
 
 ## Error Handling
 
@@ -373,16 +400,18 @@ The change is itself about error handling; the notable decisions:
 
 ## Testing Strategy
 
-Implemented in `wisprTests/FileAccessTests.swift`: 20 tests across three suites, all passing.
+Implemented in `wisprTests/FileAccessTests.swift`: 23 tests across three suites, all passing.
 
 ### Classification — `FileAccessClassificationTests`
 
 Covers every shape in Property 4 by constructing `NSError` values directly: Cocoa
 `NSFileReadNoPermissionError`, top-level `EPERM`, top-level `EACCES`, and both codes wrapped in a
-Cocoa error via `NSUnderlyingErrorKey`. Negative cases pin down that `NSFileNoSuchFileError`,
-`ENOENT`, and a foreign domain carrying the `EPERM` numeric value are *not* denials. Two further
-tests assert `classify` maps a denial to `.permissionDenied` and everything else to `.other` with a
-non-empty reason, which is Property 5.
+Cocoa error via `NSUnderlyingErrorKey`. Three tests cover chain traversal specifically — a POSIX
+denial two wrappers deep, a Cocoa no-permission error nested inside a wrapper, and a 50-deep
+non-denial chain asserting traversal terminates rather than recursing without bound. Negative cases
+pin down that `NSFileNoSuchFileError`, `ENOENT`, and a foreign domain carrying the `EPERM` numeric
+value are *not* denials. Two further tests assert `classify` maps a denial to `.permissionDenied` and
+everything else to `.other` with a non-empty reason, which is Property 5.
 
 ### Strict reads — `FileAccessReadDirectoryTests`
 

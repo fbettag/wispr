@@ -132,8 +132,10 @@ Foundation produces, so that the good message is not skipped because of an error
 
 1. THE CLI SHALL treat `NSCocoaErrorDomain` / `NSFileReadNoPermissionError` as a permission denial.
 2. THE CLI SHALL treat `NSPOSIXErrorDomain` with code `EPERM` or `EACCES` as a permission denial,
-   whether it appears as the top-level error or as an underlying error.
-3. WHEN detection does not match, THE CLI SHALL still surface the error per Requirement 1.5, so a
+   whether it appears as the top-level error or anywhere in its chain of underlying errors.
+3. THE CLI SHALL terminate its traversal of an underlying-error chain regardless of the chain's
+   depth or the presence of a cycle.
+4. WHEN detection does not match, THE CLI SHALL still surface the error per Requirement 1.5, so a
    detection miss degrades to a verbose but correct message rather than a wrong one.
 
 ### Requirement 6: Documentation matches reality
