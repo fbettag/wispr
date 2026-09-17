@@ -40,6 +40,7 @@ final class MockTextInsertionService: TextInserting {
 final class FakePasteboard: TextPasteboard {
     private var storage: [NSPasteboard.PasteboardType: Data] = [:]
     private(set) var changeCount: Int = 0
+    var failSetString = false
 
     var types: [NSPasteboard.PasteboardType]? { Array(storage.keys) }
 
@@ -54,6 +55,7 @@ final class FakePasteboard: TextPasteboard {
 
     @discardableResult
     func setString(_ string: String, forType type: NSPasteboard.PasteboardType) -> Bool {
+        guard !failSetString else { return false }
         storage[type] = Data(string.utf8)
         changeCount += 1
         return true
@@ -78,6 +80,80 @@ final class FakePasteboard: TextPasteboard {
 @MainActor
 struct TextInsertionClipboardTests {
 
+    @Test("failed paste does not reuse its clipboard snapshot on the next insertion")
+    func failedPasteDoesNotReuseSnapshot() async throws {
+        let pb = FakePasteboard()
+        pb.setString("before failure", forType: .string)
+        var pasteSucceeds = false
+        let service = TextInsertionService(
+            pasteboard: pb,
+            restoreDelay: .zero,
+            canPostEvents: { true },
+            performPaste: { pasteSucceeds }
+        )
+
+        await #expect(throws: WisprError.self) {
+            try await service.insertText("manual fallback")
+        }
+        #expect(pb.string == "manual fallback")
+
+        pb.setString("new user copy", forType: .string)
+        pasteSucceeds = true
+        try await service.insertText("next dictation")
+        await service.awaitPendingPasteboardRestore()
+        #expect(pb.string == "new user copy")
+    }
+
+    @Test("failed clipboard write does not reuse a stale snapshot")
+    func failedWriteDoesNotReuseSnapshot() async throws {
+        let pb = FakePasteboard()
+        pb.setString("before failure", forType: .string)
+        var pasteCalls = 0
+        let service = TextInsertionService(
+            pasteboard: pb,
+            restoreDelay: .zero,
+            canPostEvents: { true },
+            performPaste: { pasteCalls += 1; return true }
+        )
+        pb.failSetString = true
+        await #expect(throws: WisprError.self) {
+            try await service.insertText("failed transcription")
+        }
+        #expect(pasteCalls == 0)
+        pb.failSetString = false
+        pb.setString("new user copy", forType: .string)
+        try await service.insertText("next transcription")
+        await service.awaitPendingPasteboardRestore()
+        #expect(pb.string == "new user copy")
+    }
+
+    @Test("denied paste access preserves fallback text and permission changes are rechecked")
+    func deniedAccessDoesNotPostEvents() async throws {
+        let pb = FakePasteboard()
+        pb.setString("original", forType: .string)
+        var accessGranted = false
+        var pasteCalls = 0
+        let service = TextInsertionService(
+            pasteboard: pb,
+            restoreDelay: .zero,
+            canPostEvents: { accessGranted },
+            performPaste: { pasteCalls += 1; return true }
+        )
+        await #expect(throws: WisprError.textInsertionFailed("Failed to simulate ⌘V keystroke")) {
+            try await service.insertText("manual fallback")
+        }
+        #expect(pasteCalls == 0)
+        await service.awaitPendingPasteboardRestore()
+        #expect(pb.string == "manual fallback")
+
+        pb.setString("new user copy", forType: .string)
+        accessGranted = true
+        try await service.insertText("next dictation")
+        await service.awaitPendingPasteboardRestore()
+        #expect(pasteCalls == 1)
+        #expect(pb.string == "new user copy")
+    }
+
     /// Bug 1: a manual copy made during the restore window must NOT be clobbered
     /// by the restore. If the user copies something new after Wispr pastes, the
     /// restore should not overwrite it with the pre-transcription snapshot.
@@ -89,6 +165,7 @@ struct TextInsertionClipboardTests {
         let service = TextInsertionService(
             pasteboard: pb,
             restoreDelay: .zero,
+            canPostEvents: { true },
             performPaste: { true }
         )
 
@@ -113,6 +190,7 @@ struct TextInsertionClipboardTests {
         let service = TextInsertionService(
             pasteboard: pb,
             restoreDelay: .zero,
+            canPostEvents: { true },
             performPaste: { true }
         )
 
@@ -131,6 +209,7 @@ struct TextInsertionClipboardTests {
         let service = TextInsertionService(
             pasteboard: pb,
             restoreDelay: .zero,
+            canPostEvents: { true },
             performPaste: { true }
         )
 

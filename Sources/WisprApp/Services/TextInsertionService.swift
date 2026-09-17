@@ -76,15 +76,22 @@ final class TextInsertionService: TextInserting {
     /// Returns `true` on success.
     private let performPaste: @MainActor () -> Bool
 
+    /// Checked on each insertion so changes to macOS permissions take effect immediately.
+    private let canPostEvents: @MainActor () -> Bool
+
     // MARK: - Init
 
     init(
         pasteboard: any TextPasteboard = NSPasteboard.general,
         restoreDelay: Duration = .seconds(2),
+        canPostEvents: @escaping @MainActor () -> Bool = {
+            CGPreflightPostEventAccess()
+        },
         performPaste: (@MainActor () -> Bool)? = nil
     ) {
         self.pasteboard = pasteboard
         self.restoreDelay = restoreDelay
+        self.canPostEvents = canPostEvents
         // Default paste posts a real ⌘V; captured lazily to avoid referencing
         // `self` before initialization completes.
         self.performPaste = performPaste ?? { Self.postCommandV() }
@@ -123,6 +130,7 @@ final class TextInsertionService: TextInserting {
         // Clear and set new text
         pasteboard.clearContents()
         guard pasteboard.setString(text, forType: .string) else {
+            discardPendingPasteboardRestore()
             throw WisprError.textInsertionFailed("Failed to copy text to pasteboard")
         }
 
@@ -138,9 +146,12 @@ final class TextInsertionService: TextInserting {
             "Clipboard overwritten with transcription (\(text.count, privacy: .public) chars) for ⌘V paste")
 
         // Simulate ⌘V keystroke
-        let success = performPaste()
+        let success = canPostEvents() && performPaste()
 
         guard success else {
+            // A failed paste leaves text available for manual pasting, but must
+            // not retain a snapshot that a later insertion could restore.
+            discardPendingPasteboardRestore()
             throw WisprError.textInsertionFailed("Failed to simulate ⌘V keystroke")
         }
 
@@ -163,6 +174,12 @@ final class TextInsertionService: TextInserting {
             self.originalPasteboardContents = nil
             self.pasteboardRestoreTask = nil
         }
+    }
+
+    private func discardPendingPasteboardRestore() {
+        pasteboardRestoreTask?.cancel()
+        pasteboardRestoreTask = nil
+        originalPasteboardContents = nil
     }
 
     /// Awaits the currently-scheduled pasteboard restore, if any. Test hook so a
