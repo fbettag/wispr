@@ -25,7 +25,7 @@ Worktree: `/Users/sst/code/swift/mac/wispr-cli-progress`
 
 - [x] 2.1 New `Sources/WisprCLI/DurationFormat.swift`: `formatDuration`,
       `formatClock`, plus `Duration.seconds`.
-- [x] 2.2 New `Sources/WisprCLI/ProgressReporter.swift`: phases, actor state,
+- [x] 2.2 New `Sources/WisprCLI/TerminalProgressReporter.swift`: phases, actor state,
       `AsyncStream(bufferingNewest: 1)` event intake, 100 ms ticker, render task,
       EMA speed + ETA, monotonic clamping.
 - [x] 2.3 Renderer styles: interactive (ANSI single line, `TIOCGWINSZ` width,

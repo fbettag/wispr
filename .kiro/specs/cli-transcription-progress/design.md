@@ -14,7 +14,7 @@ Three layers, cleanly separated:
                               │  ProgressUpdate events (irregular)
                               ▼
 ┌─ WisprCLI ────────────────────────────────────────────────────────┐
-│  ProgressReporter (actor)                                         │
+│  TerminalProgressReporter (actor)                                 │
 │    ├── AsyncStream<Event>, .bufferingNewest(1)   ← engine events  │
 │    ├── 100 ms ticker                             ← liveness       │
 │    ├── state: phase, position, total, phase start, run start      │
@@ -188,14 +188,14 @@ TTY detection (`isatty`) must also happen against the saved fd, not
 `STDERR_FILENO`, which by then points at `/dev/null`. In `--verbose` mode nothing
 is suppressed and the renderer writes to `STDERR_FILENO` directly.
 
-### New file: `Sources/WisprCLI/ProgressReporter.swift`
+### New file: `Sources/WisprCLI/TerminalProgressReporter.swift`
 
 An actor. Two inputs, one output.
 
 ```swift
 enum ProgressPhase { case loadingModel, decoding, transcribing }
 
-actor ProgressReporter {
+actor TerminalProgressReporter {
     enum Style { case interactive, plainLines, silent }
 
     func begin(_ phase: ProgressPhase, total: Double?)
@@ -327,7 +327,7 @@ still renders, transcript still lands in the file.
 Automated (`WisprTests`, pure logic, no models needed):
 
 - `formatDuration` boundaries.
-- `ProgressReporter` state machine: monotonic clamping, ETA withheld before the
+- `TerminalProgressReporter` state machine: monotonic clamping, ETA withheld before the
   first report, phase transitions, `bufferingNewest` collapse.
 - Bar rendering at 10 / 40 cells and below the 60-column cutoff.
 - `MockTranscriptionEngine` still conforms without implementing the new
