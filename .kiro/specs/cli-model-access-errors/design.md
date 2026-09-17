@@ -298,8 +298,12 @@ tmux server keeps its old permissions.
 `.other(reason)` uses the same first two blocks, then:
 
 ```
-The directory could not be read: <reason>
+The read failed: <reason>
 ```
+
+Deliberately "the read" rather than "the directory": `explain` also renders the preferences-file
+failure, so directory-specific wording would be wrong there. The subject is already named on the
+first line by `what`.
 
 `noModelsDirectory(path:)`:
 
