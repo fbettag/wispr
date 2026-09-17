@@ -44,8 +44,9 @@ Access.
     - Match `NSPOSIXErrorDomain` with `EPERM` or `EACCES`
     - Walk the chain recursively rather than checking one level: `NSError.underlyingErrors` covers
       both `NSUnderlyingErrorKey` and `NSMultipleUnderlyingErrorsKey`, but only descends one level,
-      so a wrapper wrapping a wrapper would hide the denial. Cap the depth so a pathological chain
-      cannot recurse without bound.
+      so a wrapper wrapping a wrapper would hide the denial
+    - Terminate via a visited `ObjectIdentifier` set, not a depth cap. A cap bounds recursion but
+      reclassifies a denial nested below it as `.other`, which would violate 5.2.
     - _Requirements: 5.1, 5.2, 5.3_
 
 - [x] 3. Make directory reads strict
@@ -136,7 +137,7 @@ Access.
 ## Notes
 
 - Tests were requested during implementation, so task 8 is no longer optional. Implemented in
-  `wisprTests/FileAccessTests.swift`: 23 tests in 3 suites, covering classification, strict reads, and
+  `wisprTests/FileAccessTests.swift`: 25 tests in 3 suites, covering classification, strict reads, and
   message content. All passing.
 - The classifier, strict read, and guidance text landed in `WisprCore` rather than the CLI, because
   the test target depends on `WisprApp` and `WisprCore` but not on the `WisprCLI` executable target.

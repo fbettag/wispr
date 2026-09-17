@@ -52,33 +52,44 @@ public nonisolated enum FileAccess {
     /// still surfaces the underlying description, so an unrecognised error
     /// produces a verbose but truthful message rather than a wrong one.
     public static func isPermissionDenied(_ error: Error) -> Bool {
-        isPermissionDenied(error as NSError, depth: 0)
+        var visited = Set<ObjectIdentifier>()
+        return isPermissionDenied(error as NSError, visited: &visited)
     }
 
-    /// Walks a wrapped error chain looking for a denial at any level.
+    /// Walks a wrapped error chain looking for a denial at any depth.
     ///
     /// `NSError.underlyingErrors` already reports both the singular
     /// `NSUnderlyingErrorKey` and the plural `NSMultipleUnderlyingErrorsKey`,
     /// so neither form needs handling of its own. What does need handling is a
     /// wrapper whose underlying error is itself a wrapper: inspecting only one
     /// level would miss a denial nested below it.
-    private static func isPermissionDenied(_ error: NSError, depth: Int) -> Bool {
+    ///
+    /// Termination comes from tracking visited errors rather than from a depth
+    /// limit, so no reachable denial is skipped however deeply it is nested.
+    /// `NSError` is a class and `as NSError` preserves reference identity for
+    /// errors pulled out of `underlyingErrors`, so `ObjectIdentifier` is a
+    /// sound key here.
+    private static func isPermissionDenied(
+        _ error: NSError,
+        visited: inout Set<ObjectIdentifier>
+    ) -> Bool {
+        // A well-formed chain never revisits an error; this guards the
+        // pathological case rather than an expected one.
+        guard visited.insert(ObjectIdentifier(error)).inserted else { return false }
+
         if error.domain == NSCocoaErrorDomain,
             error.code == NSFileReadNoPermissionError {
             return true
         }
         if isPOSIXDenial(error) { return true }
 
-        guard depth < maxUnderlyingErrorDepth else { return false }
-        return error.underlyingErrors.contains {
-            isPermissionDenied($0 as NSError, depth: depth + 1)
+        for underlying in error.underlyingErrors {
+            if isPermissionDenied(underlying as NSError, visited: &visited) {
+                return true
+            }
         }
+        return false
     }
-
-    /// Depth cap for `underlyingErrors` traversal. Real chains from Foundation
-    /// are one level deep; the cap exists only so a pathological or
-    /// self-referential chain cannot recurse without bound.
-    private static let maxUnderlyingErrorDepth = 5
 
     private static func isPOSIXDenial(_ error: NSError) -> Bool {
         guard error.domain == NSPOSIXErrorDomain else { return false }

@@ -84,13 +84,39 @@ struct FileAccessClassificationTests {
 
     @Test("A deeply nested non-denial terminates instead of recursing forever")
     func testDeepChainTerminates() {
-        // Guards the depth cap. A chain this deep does not occur in practice;
-        // the point is that traversal ends rather than spinning.
+        // A chain this deep does not occur in practice; the point is that
+        // traversal ends rather than spinning.
         var error = cocoaError(NSFileNoSuchFileError)
         for _ in 0..<50 {
             error = cocoaError(NSFileReadUnknownError, underlying: error)
         }
         #expect(!FileAccess.isPermissionDenied(error))
+    }
+
+    @Test("A denial is found however deeply it is nested")
+    func testDeeplyNestedDenialIsFound() {
+        // Termination is by visited-set, not a depth limit, so nesting depth
+        // must not decide whether the guidance is shown. Requirement 5.2 says
+        // "anywhere in its chain"; a truncating traversal would fail here.
+        var error = posixError(EPERM)
+        for _ in 0..<50 {
+            error = cocoaError(NSFileReadUnknownError, underlying: error)
+        }
+        #expect(FileAccess.isPermissionDenied(error))
+    }
+
+    @Test("A denial reachable through a branch of a multi-error chain is found")
+    func testDenialInMultipleUnderlyingErrors() {
+        // NSMultipleUnderlyingErrorsKey yields several siblings; the denial may
+        // be in any of them, so every branch has to be walked.
+        let benign = cocoaError(NSFileNoSuchFileError)
+        let denial = cocoaError(NSFileReadUnknownError, underlying: posixError(EACCES))
+        let multi = NSError(
+            domain: NSCocoaErrorDomain,
+            code: NSFileReadUnknownError,
+            userInfo: [NSMultipleUnderlyingErrorsKey: [benign, denial]]
+        )
+        #expect(FileAccess.isPermissionDenied(multi))
     }
 
     // MARK: - Non-denials
