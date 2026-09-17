@@ -68,12 +68,24 @@ struct TranscribeConfig: Sendable {
     let languageCode: String?
     let outputPath: String?
     let verbose: Bool
+    let progress: ProgressPreference
+    let quiet: Bool
 }
 
 struct DownloadedModelInfo: Sendable {
     let name: String
     let sizeOnDisk: Int64
     let path: URL
+}
+
+// MARK: - Argument Conformances
+
+// Declared here rather than in TerminalProgressReporter.swift to keep the rendering code
+// free of an ArgumentParser dependency.
+extension ProgressPreference: ExpressibleByArgument {
+    nonisolated public static var allValueStrings: [String] {
+        allCases.map(\.rawValue)
+    }
 }
 
 // MARK: - CLI Entry Point
@@ -107,16 +119,29 @@ struct WisprCLI: AsyncParsableCommand {
     @Option(name: .long, help: "Write transcription to a file instead of stdout.")
     var output: String?
 
-    @Flag(name: .long, help: "Print progress and timing information to stderr.")
+    @Flag(name: .long, help: "Print per-phase timing information to stderr.")
     var verbose = false
+
+    @Option(
+        name: .long,
+        help: """
+            Progress indicator: auto (only when stderr is a terminal), always, \
+            or never. Also settable via WISPR_PROGRESS.
+            """
+    )
+    var progress: ProgressPreference?
+
+    @Flag(name: [.long, .short], help: "Suppress all progress and status output on stderr.")
+    var quiet = false
 
     @Flag(name: .long, help: "List all downloaded models and exit.")
     var listModels = false
 
     mutating func run() async throws {
         // Printed before any discovery so a misdirected root is visible in bug
-        // reports without having to read the source.
-        if verbose {
+        // reports without having to read the source. Suppressed by --quiet,
+        // which promises to silence all stderr output.
+        if verbose && !quiet {
             printStderr("Models root: \(ModelPaths.base.path)")
         }
 
@@ -131,9 +156,21 @@ struct WisprCLI: AsyncParsableCommand {
                 modelName: model,
                 languageCode: language,
                 outputPath: output,
-                verbose: verbose
+                verbose: verbose,
+                progress: resolvedProgressPreference(),
+                quiet: quiet
             ))
         }
+    }
+
+    /// Explicit `--progress` wins; otherwise `WISPR_PROGRESS`; otherwise auto.
+    private func resolvedProgressPreference() -> ProgressPreference {
+        if let progress { return progress }
+        if let env = ProcessInfo.processInfo.environment["WISPR_PROGRESS"],
+           let parsed = ProgressPreference(rawValue: env.lowercased()) {
+            return parsed
+        }
+        return .auto
     }
 
     // MARK: - Transcription Orchestration
@@ -145,50 +182,150 @@ struct WisprCLI: AsyncParsableCommand {
             throw CLIError.fileNotFound(config.filePath)
         }
 
-        // 1. Resolve model
+        // Resolve the model before any stderr redirection, so a failure here is
+        // reported normally.
         let modelName = try resolveModel(config.modelName)
-        printStderr("Using model: \(modelName)")
 
-        // Suppress FluidAudio SDK logs unless --verbose is set.
-        // The SDK writes INFO-level messages to stderr with no public
-        // log-level filter, so we redirect the fd during engine calls.
-        let savedFd = config.verbose ? Int32(-1) : suppressStderr()
-        defer { if !config.verbose { restoreStderr(savedFd) } }
+        // Suppress FluidAudio SDK logs. The SDK writes INFO-level messages to
+        // stderr with no public log-level filter, so we redirect the fd for the
+        // duration of the engine calls.
+        //
+        // --verbose opts into seeing those logs; --quiet overrides it, because a
+        // flag that promises to suppress all stderr output has to win over one
+        // that merely asks for more of it. Without this, `--quiet --verbose`
+        // printed 20 lines of SDK logging.
+        //
+        // `suppressStderr()` returns a dup of the original descriptor. Progress
+        // is written to *that*, not to FileHandle.standardError, which by then
+        // points at /dev/null. TTY detection has to use it too.
+        let suppressingSDKLogs = Self.shouldSuppressSDKLogs(
+            verbose: config.verbose,
+            quiet: config.quiet
+        )
+        let savedFd = suppressingSDKLogs ? suppressStderr() : Int32(-1)
+        defer { if suppressingSDKLogs { restoreStderr(savedFd) } }
 
-        // 2. Load model
+        let progressOutput = suppressingSDKLogs
+            ? ProgressOutput(fd: savedFd)
+            : ProgressOutput.standardError
+
+        let style = Self.progressStyle(
+            preference: config.progress,
+            quiet: config.quiet,
+            verbose: config.verbose,
+            output: progressOutput
+        )
+
+        let reporter = TerminalProgressReporter(
+            output: progressOutput,
+            style: style,
+            verbose: config.verbose,
+            logsEnabled: !config.quiet
+        )
+        if style == .interactive {
+            CursorRestorer.install(output: progressOutput)
+        }
+        await reporter.start()
+
+        if !config.quiet {
+            await reporter.log("Using model: \(modelName)")
+        }
+
+        // `defer` bodies can't await, so both exits run finish() explicitly.
+        // It must happen before the transcript is written so the progress line
+        // is erased first, and before an error is reported for the same reason.
+        do {
+            let text = try await runPhases(
+                fileURL: fileURL,
+                modelName: modelName,
+                config: config,
+                reporter: reporter
+            )
+            await reporter.finish()
+            try writeOutput(text, to: config.outputPath)
+        } catch {
+            await reporter.finish()
+            throw error
+        }
+    }
+
+    /// Runs the three timed phases, reporting progress, and returns the transcript.
+    private func runPhases(
+        fileURL: URL,
+        modelName: String,
+        config: TranscribeConfig,
+        reporter: TerminalProgressReporter
+    ) async throws -> String {
+        // 1. Load the model. Length is unknowable up front (CoreML/ANE
+        //    compilation dominates), so this phase is indeterminate.
         let engine = CompositeTranscriptionEngine(
             engines: [WhisperService(), ParakeetService()]
         )
-        let startLoad = ContinuousClock.now
+        await reporter.begin(.loadingModel(modelName))
         try await engine.loadModel(modelName)
-        if config.verbose {
-            let elapsed = ContinuousClock.now - startLoad
-            printStderr("Model loaded in \(elapsed)")
-        }
+        await reporter.endPhase()
 
-        // 3. Get file metadata
+        // 2. Decode. Total is known from the container metadata.
         let decoder = AudioFileDecoder()
         let meta = try await decoder.metadata(for: fileURL)
-        if config.verbose {
-            printStderr("Audio duration: \(String(format: "%.1f", meta.duration))s")
-        }
 
-        // 4. Decode and transcribe
-        // Decode the full audio and let the transcription engine handle its
-        // own chunking strategy. Both WhisperKit and Parakeet have built-in
-        // chunk processors with proper overlap, context windows, and token
-        // deduplication that produce significantly better results than naive
-        // external chunking.
+        // Handlers are fetched after begin() so they carry that phase's
+        // generation tag; an event from the previous phase is then discarded
+        // rather than being mistaken for a position in this one.
+        await reporter.begin(.decoding, total: meta.duration)
+        let samples = try await decoder.decode(
+            fileURL: fileURL,
+            onProgress: await reporter.decodeHandler()
+        )
+        let audioSeconds = Double(samples.count) / 16_000.0
+        await reporter.endPhase(detail: "\(formatClock(audioSeconds)) of audio")
+
+        // 3. Transcribe the full buffer and let the engine handle its own
+        //    chunking. Both WhisperKit and Parakeet have built-in chunk
+        //    processors with proper overlap, context windows, and token
+        //    deduplication that produce significantly better results than naive
+        //    external chunking.
         let language: TranscriptionLanguage = config.languageCode
             .map { .specific(code: $0) } ?? .autoDetect
 
-        let samples = try await decoder.decode(fileURL: fileURL)
-        if config.verbose {
-            printStderr("Decoded \(samples.count) samples")
-        }
+        await reporter.begin(.transcribing, total: audioSeconds)
+        let result = try await engine.transcribe(
+            samples,
+            language: language,
+            onProgress: await reporter.transcriptionHandler()
+        )
+        await reporter.endPhase()
 
-        let result = try await engine.transcribe(samples, language: language)
-        try writeOutput(result.text, to: config.outputPath)
+        return result.text
+    }
+
+    /// Whether third-party SDK logging on stderr should be redirected away.
+    ///
+    /// `--verbose` opts into seeing it; `--quiet` overrides that, since a flag
+    /// promising to suppress all stderr output must beat one asking for more.
+    static func shouldSuppressSDKLogs(verbose: Bool, quiet: Bool) -> Bool {
+        !verbose || quiet
+    }
+
+    /// Resolves the effective rendering style.
+    ///
+    /// `--quiet` beats everything. Otherwise a TTY gets the interactive line; a
+    /// non-TTY gets plain periodic lines only when the user asked for output
+    /// explicitly (`--progress always`) or is running `--verbose`, so piping
+    /// stderr to a file doesn't fill it with progress by default.
+    static func progressStyle(
+        preference: ProgressPreference,
+        quiet: Bool,
+        verbose: Bool,
+        output: ProgressOutput
+    ) -> ProgressStyle {
+        if quiet || preference == .never { return .silent }
+        if output.isTTY { return .interactive }
+        switch preference {
+        case .always: return .plainLines
+        case .auto: return verbose ? .plainLines : .silent
+        case .never: return .silent
+        }
     }
 
     // MARK: - Model Discovery

@@ -26,6 +26,9 @@
 		1C74D2BF2FA6328D00208826 /* Logger.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1C74D2A52FA6328D00208826 /* Logger.swift */; };
 		1C74D2C02FA6328D00208826 /* ModelPaths.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1C74D2A62FA6328D00208826 /* ModelPaths.swift */; };
 		FA00000000000000000000A1 /* FileAccess.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA00000000000000000000F1 /* FileAccess.swift */; };
+		FB00000000000000000000A1 /* ProgressUpdate.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB00000000000000000000F1 /* ProgressUpdate.swift */; };
+		FB00000000000000000000A2 /* DurationFormat.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB00000000000000000000F2 /* DurationFormat.swift */; };
+		FB00000000000000000000A3 /* TerminalProgressReporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB00000000000000000000F3 /* TerminalProgressReporter.swift */; };
 		1C74D2C12FA6328D00208826 /* WhisperService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1C74D2A32FA6328D00208826 /* WhisperService.swift */; };
 		1C74D2C22FA6328D00208826 /* TranscriptionEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1C74D2A22FA6328D00208826 /* TranscriptionEngine.swift */; };
 		1C74D2C62FA632A600208826 /* WisprCLI.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1C74D2C32FA632A600208826 /* WisprCLI.swift */; };
@@ -175,6 +178,9 @@
 		1C74D2A52FA6328D00208826 /* Logger.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Logger.swift; sourceTree = "<group>"; };
 		1C74D2A62FA6328D00208826 /* ModelPaths.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelPaths.swift; sourceTree = "<group>"; };
 		FA00000000000000000000F1 /* FileAccess.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileAccess.swift; sourceTree = "<group>"; };
+		FB00000000000000000000F1 /* ProgressUpdate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProgressUpdate.swift; sourceTree = "<group>"; };
+		FB00000000000000000000F2 /* DurationFormat.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DurationFormat.swift; sourceTree = "<group>"; };
+		FB00000000000000000000F3 /* TerminalProgressReporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalProgressReporter.swift; sourceTree = "<group>"; };
 		1C74D2C32FA632A600208826 /* WisprCLI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WisprCLI.swift; sourceTree = "<group>"; };
 		1C74D2C72FA632B700208826 /* AppStateType.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppStateType.swift; sourceTree = "<group>"; };
 		1C74D2C82FA632B700208826 /* AppUpdateInfo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppUpdateInfo.swift; sourceTree = "<group>"; };
@@ -357,6 +363,7 @@
 				1C74D29F2FA6328D00208826 /* AudioFileDecoder.swift */,
 				1C74D2A02FA6328D00208826 /* CompositeTranscriptionEngine.swift */,
 				1C74D2A12FA6328D00208826 /* ParakeetService.swift */,
+				FB00000000000000000000F1 /* ProgressUpdate.swift */,
 				1C74D2A22FA6328D00208826 /* TranscriptionEngine.swift */,
 				1C74D2A32FA6328D00208826 /* WhisperService.swift */,
 			);
@@ -387,6 +394,8 @@
 		1C74D2C42FA632A600208826 /* WisprCLI */ = {
 			isa = PBXGroup;
 			children = (
+				FB00000000000000000000F2 /* DurationFormat.swift */,
+				FB00000000000000000000F3 /* TerminalProgressReporter.swift */,
 				1C74D2C32FA632A600208826 /* WisprCLI.swift */,
 			);
 			name = WisprCLI;
@@ -851,6 +860,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				FB00000000000000000000A2 /* DurationFormat.swift in Sources */,
+				FB00000000000000000000A3 /* TerminalProgressReporter.swift in Sources */,
 				1C74D2C62FA632A600208826 /* WisprCLI.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -864,6 +875,7 @@
 				1C74D2B82FA6328D00208826 /* CompositeTranscriptionEngine.swift in Sources */,
 				1C74D2B92FA6328D00208826 /* ModelInfo.swift in Sources */,
 				1C74D2BA2FA6328D00208826 /* ParakeetService.swift in Sources */,
+				FB00000000000000000000A1 /* ProgressUpdate.swift in Sources */,
 				1C74D2BB2FA6328D00208826 /* DownloadProgress.swift in Sources */,
 				1C74D2BC2FA6328D00208826 /* AudioFileDecoder.swift in Sources */,
 				1C74D2BD2FA6328D00208826 /* WisprError.swift in Sources */,
