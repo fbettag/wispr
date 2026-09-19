@@ -28,6 +28,7 @@ let package = Package(
             name: "WisprCore",
             dependencies: [
                 "WhisperKit",
+                .product(name: "SpeakerKit", package: "WhisperKit"),
                 "FluidAudio",
             ],
             path: "Sources/WisprCore",
@@ -53,6 +54,7 @@ let package = Package(
             dependencies: [
                 "WisprCore",
                 "WhisperKit",
+                .product(name: "SpeakerKit", package: "WhisperKit"),
                 "FluidAudio",
                 .product(name: "ArgumentParser", package: "swift-argument-parser"),
             ],

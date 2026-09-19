@@ -112,6 +112,11 @@ public nonisolated enum ModelPaths {
         models.appendingPathComponent("sortformer", isDirectory: true)
     }
 
+    /// SpeakerKit (Pyannote) model cache: `<base>/models/speakerkit/`
+    public static var speakerKit: URL {
+        models.appendingPathComponent("speakerkit", isDirectory: true)
+    }
+
     /// URL of the GUI app's UserDefaults plist.
     /// Inside the sandbox this is the standard location; outside (CLI) it
     /// points into the GUI's container so the CLI reads current values

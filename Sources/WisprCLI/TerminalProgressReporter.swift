@@ -27,12 +27,14 @@ nonisolated enum ProgressPhase: Sendable, Equatable {
     case loadingModel(String)
     case decoding
     case transcribing
+    case diarizing
 
     var label: String {
         switch self {
         case .loadingModel(let name): "Loading model \(name)"
         case .decoding: "Decoding audio"
         case .transcribing: "Transcribing"
+        case .diarizing: "Diarizing speakers"
         }
     }
 
@@ -42,6 +44,7 @@ nonisolated enum ProgressPhase: Sendable, Equatable {
         case .loadingModel(let name): "Model \(name) loaded"
         case .decoding: "Audio decoded"
         case .transcribing: "Transcribed"
+        case .diarizing: "Speakers diarized"
         }
     }
 }

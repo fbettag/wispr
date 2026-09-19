@@ -69,6 +69,14 @@ public nonisolated enum WisprError: Error, Sendable, Equatable {
     
     /// No Whisper models are available (all deleted or none downloaded).
     case noModelsAvailable
+
+    // MARK: - Diarization
+
+    /// Speaker diarization service has not been initialized.
+    case diarizationNotInitialized
+
+    /// Speaker diarization failed with a specific error message.
+    case diarizationFailed(String)
 }
 
 // MARK: - LocalizedError
@@ -108,6 +116,10 @@ extension WisprError: LocalizedError {
             return "Model deletion failed: \(message)"
         case .noModelsAvailable:
             return "No transcription models are available."
+        case .diarizationNotInitialized:
+            return "Speaker diarization service is not initialized."
+        case .diarizationFailed(let message):
+            return "Speaker diarization failed: \(message)"
         }
     }
 }

@@ -492,7 +492,8 @@ public actor WhisperService {
                 audioArray: audioSamples,
                 decodeOptions: DecodingOptions(
                     language: languageCode,
-                    detectLanguage: languageCode == nil
+                    detectLanguage: languageCode == nil,
+                    wordTimestamps: true
                 ),
                 callback: tokenCallback,
                 segmentCallback: segmentCallback
@@ -509,44 +510,68 @@ public actor WhisperService {
             guard !results.isEmpty else {
                 throw WisprError.emptyTranscription
             }
-            
-            let transcribedText = results
+
+            // Convert WhisperKit segments to our TranscriptionSegment format
+            // Speaker index is nil here - will be populated by diarization service if enabled
+            // WhisperKit returns an array of TranscriptionResult, each containing segments
+            let transcriptionSegments: [TranscriptionSegment] = results.flatMap { result in
+                result.segments.map { segment in
+                    let words: [WordTiming]? = segment.words?.map { word in
+                        WordTiming(
+                            word: word.word,
+                            start: TimeInterval(word.start),
+                            end: TimeInterval(word.end),
+                            probability: word.probability
+                        )
+                    }
+                    return TranscriptionSegment(
+                        speakerIndex: nil,
+                        startTime: TimeInterval(segment.start),
+                        endTime: TimeInterval(segment.end),
+                        text: segment.text,
+                        words: words
+                    )
+                }
+            }
+
+            let transcribedText = transcriptionSegments
                 .map { $0.text }
                 .joined()
                 .trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
-            
+
             // Filter out WhisperKit hallucination tokens (e.g. "[BLANK_AUDIO]")
             let hallucinationPatterns = ["[BLANK_AUDIO]", "(BLANK_AUDIO)", "[BLANK AUDIO]"]
             let filteredText = hallucinationPatterns.reduce(transcribedText) { text, pattern in
                 text.replacingOccurrences(of: pattern, with: "")
             }.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
-            
+
             #if DEBUG
             if filteredText != transcribedText {
                 Log.whisperService.debug("transcribe — filtered hallucinations: \"\(transcribedText, privacy: .private)\" → \"\(filteredText, privacy: .private)\"")
             }
             #endif
-            
+
             // Requirement 3.4: Handle empty transcription
             if filteredText.isEmpty {
                 throw WisprError.emptyTranscription
             }
-            
+
             // Extract detected language (for auto-detect mode)
             // WhisperKit returns language in the first result
             let detectedLanguage = results.first?.language
-            
+
             // Calculate duration
             let duration = Date().timeIntervalSince(startTime)
-            
+
             #if DEBUG
             let preview = String(filteredText.prefix(50))
             Log.whisperService.debug("transcribe — result: \"\(preview, privacy: .private)\" (len=\(filteredText.count), \(duration, format: .fixed(precision: 2))s)")
             #endif
-            
+
             // Requirement 3.3: Return TranscriptionResult
             return TranscriptionResult(
                 text: filteredText,
+                segments: transcriptionSegments,
                 detectedLanguage: detectedLanguage,
                 duration: duration
             )

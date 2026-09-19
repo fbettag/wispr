@@ -70,6 +70,8 @@ struct TranscribeConfig: Sendable {
     let verbose: Bool
     let progress: ProgressPreference
     let quiet: Bool
+    let diarize: Bool
+    let format: OutputFormat
 }
 
 struct DownloadedModelInfo: Sendable {
@@ -137,6 +139,12 @@ struct WisprCLI: AsyncParsableCommand {
     @Flag(name: .long, help: "List all downloaded models and exit.")
     var listModels = false
 
+    @Flag(name: .long, help: "Enable speaker diarization to separate speakers.")
+    var diarize = false
+
+    @Option(name: .long, help: "Output format: text (default), diarized, json, srt.")
+    var format: OutputFormat = .text
+
     mutating func run() async throws {
         // Printed before any discovery so a misdirected root is visible in bug
         // reports without having to read the source. Suppressed by --quiet,
@@ -158,7 +166,9 @@ struct WisprCLI: AsyncParsableCommand {
                 outputPath: output,
                 verbose: verbose,
                 progress: resolvedProgressPreference(),
-                quiet: quiet
+                quiet: quiet,
+                diarize: diarize,
+                format: format
             ))
         }
     }
@@ -289,14 +299,52 @@ struct WisprCLI: AsyncParsableCommand {
             .map { .specific(code: $0) } ?? .autoDetect
 
         await reporter.begin(.transcribing, total: audioSeconds)
-        let result = try await engine.transcribe(
+        var result = try await engine.transcribe(
             samples,
             language: language,
             onProgress: await reporter.transcriptionHandler()
         )
         await reporter.endPhase()
 
-        return result.text
+        // 4. Diarize if requested (optional phase)
+        if config.diarize {
+            await reporter.begin(.diarizing, total: audioSeconds)
+            let diarizer = SpeakerDiarizationService()
+            try await diarizer.initialize()
+
+            let diarizedSegments = try await diarizer.diarize(samples)
+
+            // Merge diarization results with transcription segments
+            result = TranscriptionResult(
+                text: result.text,
+                segments: diarizer.mergeSegments(
+                    transcriptionSegments: result.segments,
+                    diarizedSegments: diarizedSegments
+                ),
+                detectedLanguage: result.detectedLanguage,
+                duration: result.duration,
+                isEndOfUtterance: result.isEndOfUtterance
+            )
+            await reporter.endPhase(detail: "\(diarizedSegments.count) speaker segments")
+        }
+
+        // Format output based on requested format
+        return formatOutput(result, config: config)
+    }
+
+    /// Formats the transcription result according to the requested output format.
+    private func formatOutput(_ result: TranscriptionResult, config: TranscribeConfig) -> String {
+        let diarized = config.diarize
+        switch config.format {
+        case .text:
+            return OutputFormatter.formatText(result, diarized: diarized)
+        case .diarized:
+            return OutputFormatter.formatText(result, diarized: true)
+        case .json:
+            return OutputFormatter.formatJSON(result)
+        case .srt:
+            return OutputFormatter.formatSRT(result)
+        }
     }
 
     /// Whether third-party SDK logging on stderr should be redirected away.
