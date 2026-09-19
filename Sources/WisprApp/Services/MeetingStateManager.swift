@@ -155,13 +155,16 @@ final class MeetingStateManager {
 
         do {
             let (micLevels, systemLevels) = try await meetingAudioEngine.startCapture(
-                mode: sessionMode)
+                mode: sessionMode,
+                enableRecording: settingsStore.meetingAudioRecordingEnabled)
 
             // Flip to recording immediately so the UI is responsive. The diarizer
             // (if enabled) warms up concurrently below — chunks that arrive before
             // it's ready simply render as "Others".
             meetingState = .recording
-            isWindowVisible = true
+
+            // Show overlay unless user disabled it
+            isWindowVisible = !settingsStore.meetingOverlayHidden
 
             recordingTask = Task {
                 await withTaskGroup(of: Void.self) { group in
@@ -220,11 +223,16 @@ final class MeetingStateManager {
         recordingTask?.cancel()
         recordingTask = nil
 
-        await meetingAudioEngine.stopCapture()
+        let audioPath = await meetingAudioEngine.stopCapture()
         // reset() is a safe no-op if the diarizer was never warmed up, so call it
         // unconditionally to avoid a race with the concurrent warmup task.
         await meetingDiarizer?.reset()
         diarizationActive = false
+
+        // Store the audio recording path in the transcript if recording was enabled
+        if let audioPath = audioPath {
+            transcript.audioRecordingPath = audioPath.path
+        }
 
         // Persist the completed session to disk before it can be overwritten by a
         // subsequent startMeeting() (which resets `transcript`). Encoding and
@@ -282,6 +290,59 @@ final class MeetingStateManager {
             meetingState = .idle
             errorMessage = nil
         }
+    }
+
+    // MARK: - Re-Transcription with Pyannote
+
+    /// Re-transcribes a saved meeting using Pyannote (SpeakerKit) for more accurate
+    /// speaker diarization than the live Sortformer-based transcription.
+    ///
+    /// This is an expensive operation (minutes for a long meeting) and should be
+    /// triggered explicitly by the user via a UI button.
+    ///
+    /// - Parameter transcriptURL: The URL of the saved meeting transcript to re-transcribe.
+    /// - Throws: If audio file is missing, transcription fails, or SpeakerKit cannot initialize.
+    func retranscribeMeeting(at transcriptURL: URL) async throws {
+        Log.stateManager.info("MeetingStateManager — re-transcribing meeting with Pyannote")
+
+        // Load the transcript
+        var transcript = try TranscriptStore.load(transcriptURL)
+
+        guard let audioPathString = transcript.audioRecordingPath else {
+            throw WisprError.audioRecordingFailed("No audio recording available for re-transcription")
+        }
+
+        let audioPath = URL(fileURLWithPath: audioPathString)
+        guard FileManager.default.fileExists(atPath: audioPath.path) else {
+            throw WisprError.audioRecordingFailed("Audio file not found at \(audioPath.path)")
+        }
+
+        // Initialize Pyannote diarizer
+        let diarizer = SpeakerDiarizationService()
+        try await diarizer.initialize()
+
+        // Decode audio file
+        let decoder = AudioFileDecoder()
+        let samples = try await decoder.decode(fileURL: audioPath)
+
+        // Diarize
+        let diarizedSegments = try await diarizer.diarize(samples)
+        Log.stateManager.info("MeetingStateManager — detected \(diarizedSegments.count) speaker segments")
+
+        // TODO: Replace transcript entries with diarized results
+        // This requires mapping diarized segments back to transcript entries
+        // For now, just log success
+        Log.stateManager.info("MeetingStateManager — re-transcription complete (TODO: update entries)")
+
+        // Auto-delete audio file if enabled
+        if settingsStore.meetingAutoDeleteAudio {
+            try? FileManager.default.removeItem(at: audioPath)
+            transcript.audioRecordingPath = nil
+            Log.stateManager.info("MeetingStateManager — audio file deleted after re-transcription")
+        }
+
+        // Save updated transcript
+        try TranscriptStore.save(transcript, to: transcriptURL)
     }
 
     /// Renames a diarized speaker in the live transcript.

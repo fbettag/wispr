@@ -105,6 +105,33 @@ final class SettingsStore {
         }
     }
 
+    /// When true, meetings are recorded to disk (M4A) for later re-transcription
+    /// with Pyannote. Default is false for privacy.
+    var meetingAudioRecordingEnabled: Bool {
+        didSet {
+            guard !isLoading else { return }
+            defaults.set(meetingAudioRecordingEnabled, forKey: Keys.meetingAudioRecordingEnabled)
+        }
+    }
+
+    /// When true, the meeting overlay window is hidden during live transcription.
+    /// The meeting continues in the background; transcript is saved when it ends.
+    var meetingOverlayHidden: Bool {
+        didSet {
+            guard !isLoading else { return }
+            defaults.set(meetingOverlayHidden, forKey: Keys.meetingOverlayHidden)
+        }
+    }
+
+    /// When true, audio recordings are automatically deleted after successful
+    /// Pyannote re-transcription. Default is true for privacy and disk space.
+    var meetingAutoDeleteAudio: Bool {
+        didSet {
+            guard !isLoading else { return }
+            defaults.set(meetingAutoDeleteAudio, forKey: Keys.meetingAutoDeleteAudio)
+        }
+    }
+
     /// When true, microphone transcriptions that duplicate a recent system-audio
     /// ("Others") transcription are suppressed. Without headphones, remote
     /// participants' speech leaks from the speakers into the mic and would
@@ -252,6 +279,9 @@ final class SettingsStore {
         static let onboardingLastStep = "onboardingLastStep"
         static let handsFreeMode = "handsFreeMode"
         static let meetingDiarizationEnabled = "meetingDiarizationEnabled"
+        static let meetingAudioRecordingEnabled = "meetingAudioRecordingEnabled"
+        static let meetingOverlayHidden = "meetingOverlayHidden"
+        static let meetingAutoDeleteAudio = "meetingAutoDeleteAudio"
         static let meetingEchoSuppressionEnabled = "meetingEchoSuppressionEnabled"
         static let meetingInPersonMode = "meetingInPersonMode"
         static let soundFeedbackEnabled = "soundFeedbackEnabled"
@@ -283,6 +313,9 @@ final class SettingsStore {
         static let onboardingLastStep: Int = 0
         static let handsFreeMode: Bool = false
         static let meetingDiarizationEnabled: Bool = false
+        static let meetingAudioRecordingEnabled: Bool = false
+        static let meetingOverlayHidden: Bool = false
+        static let meetingAutoDeleteAudio: Bool = true
         static let meetingEchoSuppressionEnabled: Bool = true
         static let meetingInPersonMode: Bool = false
         static let soundFeedbackEnabled: Bool = false
@@ -318,6 +351,9 @@ final class SettingsStore {
         self.onboardingLastStep = Defaults.onboardingLastStep
         self.handsFreeMode = Defaults.handsFreeMode
         self.meetingDiarizationEnabled = Defaults.meetingDiarizationEnabled
+        self.meetingAudioRecordingEnabled = Defaults.meetingAudioRecordingEnabled
+        self.meetingOverlayHidden = Defaults.meetingOverlayHidden
+        self.meetingAutoDeleteAudio = Defaults.meetingAutoDeleteAudio
         self.meetingEchoSuppressionEnabled = Defaults.meetingEchoSuppressionEnabled
         self.meetingInPersonMode = Defaults.meetingInPersonMode
         self.soundFeedbackEnabled = Defaults.soundFeedbackEnabled
@@ -351,6 +387,9 @@ final class SettingsStore {
         launchAtLogin = Defaults.launchAtLogin
         handsFreeMode = Defaults.handsFreeMode
         meetingDiarizationEnabled = Defaults.meetingDiarizationEnabled
+        meetingAudioRecordingEnabled = Defaults.meetingAudioRecordingEnabled
+        meetingOverlayHidden = Defaults.meetingOverlayHidden
+        meetingAutoDeleteAudio = Defaults.meetingAutoDeleteAudio
         meetingEchoSuppressionEnabled = Defaults.meetingEchoSuppressionEnabled
         meetingInPersonMode = Defaults.meetingInPersonMode
         soundFeedbackEnabled = Defaults.soundFeedbackEnabled
@@ -463,6 +502,18 @@ final class SettingsStore {
 
         if defaults.object(forKey: Keys.meetingDiarizationEnabled) != nil {
             self.meetingDiarizationEnabled = defaults.bool(forKey: Keys.meetingDiarizationEnabled)
+        }
+
+        if defaults.object(forKey: Keys.meetingAudioRecordingEnabled) != nil {
+            self.meetingAudioRecordingEnabled = defaults.bool(forKey: Keys.meetingAudioRecordingEnabled)
+        }
+
+        if defaults.object(forKey: Keys.meetingOverlayHidden) != nil {
+            self.meetingOverlayHidden = defaults.bool(forKey: Keys.meetingOverlayHidden)
+        }
+
+        if defaults.object(forKey: Keys.meetingAutoDeleteAudio) != nil {
+            self.meetingAutoDeleteAudio = defaults.bool(forKey: Keys.meetingAutoDeleteAudio)
         }
 
         if defaults.object(forKey: Keys.meetingEchoSuppressionEnabled) != nil {

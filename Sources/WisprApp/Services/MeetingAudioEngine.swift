@@ -77,6 +77,20 @@ actor MeetingAudioEngine {
     /// diarizes the mic track, so it uses the shorter chunk size below.
     private var captureMode: MeetingMode = .online
 
+    // MARK: - Audio Recording State
+
+    /// Whether audio recording to disk is enabled for this session.
+    private var isRecordingAudio = false
+
+    /// Path to the recorded audio file (M4A format).
+    private var audioRecordingPath: URL?
+
+    /// Accumulated mic samples for recording (written to disk on stop).
+    private var recordedMicSamples: [Float] = []
+
+    /// Accumulated system samples for recording (written to disk on stop).
+    private var recordedSystemSamples: [Float] = []
+
     /// The audio chunk streams created at capture start.
     private var _micAudioStream: AsyncStream<MicAudioChunk>?
     private var _systemAudioStream: AsyncStream<SystemAudioChunk>?
@@ -111,14 +125,18 @@ actor MeetingAudioEngine {
     /// System audio capture may silently fail if Screen Recording permission
     /// is not granted — in that case, only mic capture is active.
     ///
-    /// - Parameter mode: `.online` captures mic + system audio (system audio may
-    ///   still fall back to mic-only if permission is denied). `.inPerson`
-    ///   captures the microphone only and never touches ScreenCaptureKit, so it
-    ///   avoids the Screen Recording permission prompt entirely.
+    /// - Parameters:
+    ///   - mode: `.online` captures mic + system audio (system audio may
+    ///     still fall back to mic-only if permission is denied). `.inPerson`
+    ///     captures the microphone only and never touches ScreenCaptureKit, so it
+    ///     avoids the Screen Recording permission prompt entirely.
+    ///   - enableRecording: When true, audio is recorded to disk for later
+    ///     re-transcription with Pyannote. The file path is returned by
+    ///     `stopCapture()`.
     /// - Returns: A tuple of (micLevelStream, systemLevelStream) for UI visualization.
     ///   In `.inPerson` mode the system level stream is silent (finishes immediately).
     /// - Throws: If microphone capture fails to start.
-    func startCapture(mode: MeetingMode = .online) async throws -> (
+    func startCapture(mode: MeetingMode = .online, enableRecording: Bool = false) async throws -> (
         micLevels: AsyncStream<Float>, systemLevels: AsyncStream<Float>
     ) {
         guard !isCapturing else {
@@ -127,10 +145,19 @@ actor MeetingAudioEngine {
 
         isCapturing = true
         captureMode = mode
+        isRecordingAudio = enableRecording
         micBuffer.removeAll()
         micSamplesTotal = 0
         micChunkStartSamples = 0
         systemBuffer.removeAll()
+
+        // Initialize recording buffers if recording is enabled
+        if enableRecording {
+            recordedMicSamples.removeAll()
+            recordedSystemSamples.removeAll()
+            self.audioRecordingPath = Self.generateRecordingPath(for: mode)
+            Log.audioEngine.info("MeetingAudioEngine — audio recording enabled, path: \(self.audioRecordingPath?.path ?? "nil")")
+        }
 
         // Create audio chunk streams upfront so continuations are ready
         // before the taps start producing data.
@@ -175,14 +202,29 @@ actor MeetingAudioEngine {
     }
 
     /// Stops all capture and cleans up resources.
-    func stopCapture() async {
+    /// - Returns: The path to the recorded audio file, or nil if recording was disabled.
+    func stopCapture() async -> URL? {
         if hasSystemAudio {
             await stopSystemCapture()
         }
+
+        // Write audio recording if enabled
+        if isRecordingAudio {
+            await writeAudioRecording()
+        }
+
         teardownMic()
         teardownSystemAudio()
         isCapturing = false
         hasSystemAudio = false
+        isRecordingAudio = false
+
+        let path = audioRecordingPath
+        audioRecordingPath = nil
+        recordedMicSamples.removeAll()
+        recordedSystemSamples.removeAll()
+
+        return path
     }
 
     /// Returns the mic audio chunk stream created during `startCapture()`.
@@ -318,6 +360,12 @@ actor MeetingAudioEngine {
 
         micSamplesTotal += samples.count
         micBuffer.append(contentsOf: samples)
+
+        // Record samples to disk if recording is enabled
+        if isRecordingAudio {
+            recordedMicSamples.append(contentsOf: samples)
+        }
+
         let chunkSize = micChunkSize
         if micBuffer.count >= chunkSize {
             let chunk = Array(micBuffer.prefix(chunkSize))
@@ -409,6 +457,12 @@ actor MeetingAudioEngine {
 
         systemSamplesTotal += samples.count
         systemBuffer.append(contentsOf: samples)
+
+        // Record samples to disk if recording is enabled
+        if isRecordingAudio {
+            recordedSystemSamples.append(contentsOf: samples)
+        }
+
         if systemBuffer.count >= systemChunkSize {
             let chunk = Array(systemBuffer.prefix(systemChunkSize))
             systemBuffer.removeFirst(min(systemChunkSize, systemBuffer.count))
@@ -441,6 +495,72 @@ actor MeetingAudioEngine {
     private func stopSystemCapture() async {
         if let stream = systemStream {
             try? await stream.stopCapture()
+        }
+    }
+
+    // MARK: - Audio Recording
+
+    /// Generates a unique file path for the meeting recording.
+    private static func generateRecordingPath(for mode: MeetingMode) -> URL {
+        let transcriptsDir = ModelPaths.transcripts
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd_HH-mm-ss"
+        let timestamp = formatter.string(from: Date())
+        let modeSuffix = mode == .inPerson ? "inperson" : "online"
+        let filename = "meeting_\(timestamp)_\(modeSuffix).m4a"
+        return transcriptsDir.appendingPathComponent(filename)
+    }
+
+    /// Writes accumulated audio samples to an M4A file.
+    /// Called automatically by stopCapture() when recording is enabled.
+    private func writeAudioRecording() async {
+        guard isRecordingAudio, let path = audioRecordingPath else { return }
+
+        Log.audioEngine.info("MeetingAudioEngine — writing audio recording to \(path.path)")
+
+        // Ensure transcripts directory exists
+        let transcriptsDir = path.deletingLastPathComponent()
+        do {
+            try FileManager.default.createDirectory(at: transcriptsDir, withIntermediateDirectories: true)
+        } catch {
+            Log.audioEngine.error("MeetingAudioEngine — failed to create transcripts directory: \(error)")
+            return
+        }
+
+        // Combine mic and system audio (simple concatenation for now)
+        // TODO: Consider mixing or writing as separate tracks
+        let allSamples = recordedMicSamples + recordedSystemSamples
+        guard !allSamples.isEmpty else {
+            Log.audioEngine.warning("MeetingAudioEngine — no audio samples to record")
+            return
+        }
+
+        // Write as M4A using AVAudioFile
+        do {
+            let format = AVAudioFormat(
+                commonFormat: .pcmFormatFloat32,
+                sampleRate: Double(Self.sampleRate),
+                channels: 1,
+                interleaved: false
+            )!
+
+            let audioFile = try AVAudioFile(
+                forWriting: path,
+                settings: format.settings,
+                commonFormat: .pcmFormatFloat32,
+                interleaved: false
+            )
+
+            let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(allSamples.count))!
+            buffer.frameLength = AVAudioFrameCount(allSamples.count)
+            allSamples.withUnsafeBufferPointer { ptr in
+                buffer.floatChannelData![0].update(from: ptr.baseAddress!, count: allSamples.count)
+            }
+
+            try audioFile.write(from: buffer)
+            Log.audioEngine.info("MeetingAudioEngine — audio recording saved: \(path.path) (\(allSamples.count) samples)")
+        } catch {
+            Log.audioEngine.error("MeetingAudioEngine — failed to write audio recording: \(error)")
         }
     }
 }

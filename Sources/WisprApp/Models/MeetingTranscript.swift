@@ -106,6 +106,11 @@ nonisolated struct MeetingTranscript: Sendable, Equatable, Codable {
     /// renaming a speaker retroactively relabels every one of their entries.
     var speakerNames: [String: String] = [:]
 
+    /// Path to the recorded audio file (M4A), if audio recording was enabled.
+    /// Used for re-transcription with Pyannote. Deleted after successful
+    /// re-transcription when `meetingAutoDeleteAudio` is enabled.
+    var audioRecordingPath: String?
+
     init(startTime: Date = Date()) {
         self.startTime = startTime
     }
@@ -113,11 +118,11 @@ nonisolated struct MeetingTranscript: Sendable, Equatable, Codable {
     // MARK: - Codable
 
     private enum CodingKeys: String, CodingKey {
-        case entries, startTime, speakerNames, title, mode
+        case entries, startTime, speakerNames, title, mode, audioRecordingPath
     }
 
-    /// Decodes a transcript, tolerating files written before `speakerNames` and
-    /// `title` existed.
+    /// Decodes a transcript, tolerating files written before `speakerNames`,
+    /// `title`, and `audioRecordingPath` existed.
     ///
     /// This initializer is not optional politeness: the compiler-synthesized
     /// `init(from:)` calls `decode(_:forKey:)` for every non-optional stored
@@ -132,6 +137,7 @@ nonisolated struct MeetingTranscript: Sendable, Equatable, Codable {
             try container.decodeIfPresent([String: String].self, forKey: .speakerNames) ?? [:]
         self.title = try container.decodeIfPresent(String.self, forKey: .title)
         self.mode = try container.decodeIfPresent(MeetingMode.self, forKey: .mode) ?? .online
+        self.audioRecordingPath = try container.decodeIfPresent(String.self, forKey: .audioRecordingPath)
     }
 
     // MARK: - Title
