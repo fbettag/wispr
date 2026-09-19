@@ -524,11 +524,13 @@ public actor WhisperService {
                             probability: word.probability
                         )
                     }
+                    // Filter WhisperKit special tokens from segment text
+                    let cleanText = Self.filterSpecialTokens(segment.text)
                     return TranscriptionSegment(
                         speakerIndex: nil,
                         startTime: TimeInterval(segment.start),
                         endTime: TimeInterval(segment.end),
-                        text: segment.text,
+                        text: cleanText,
                         words: words
                     )
                 }
@@ -705,6 +707,19 @@ public actor WhisperService {
     /// Requirement 7.7: Query which model is currently active.
     public func activeModel() async -> String? {
         return activeModelName
+    }
+
+    // MARK: - Text Filtering
+
+    /// Removes WhisperKit special tokens from transcribed text.
+    ///
+    /// WhisperKit includes tokens like `<|startoftranscript|>`, `<|en|>`, `<|transcribe|>`,
+    /// and timestamp tokens like `<|0.40|>` in the segment text. These are useful for
+    /// internal processing but should be filtered from user-facing output.
+    static func filterSpecialTokens(_ text: String) -> String {
+        // Pattern matches <|...|> tokens
+        let pattern = /\<\|[^|]*\|\>/
+        return text.replacing(pattern, with: "").trimmingCharacters(in: .whitespaces)
     }
 }
 
